@@ -201,3 +201,24 @@ PoC，真模型在构造上不可达 runtime 状态——检测率/收敛/PoC �
 `run_platform_evaluation.py` 的 detection_rate 以案例期望终态（runtime 锚定）
 为分母，真模型模式下结构性为 0。已立项：增加语义层级补充指标
 （vulnerable 侧产出任意正向状态 finding 的比例），Fake/真模型两模式同口径可算。
+
+### §3 补充：runtime-confirmed 冲刺四连（2026-10-11，加固后平台重跑）
+
+Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、桩链接策略、所有权
+规则），以同一 expat 案例重冲 runtime-confirmed 自动命中：
+
+| 轮 | 参数 | 终局 | 关键事实 |
+|---|---|---|---|
+| r2 | rounds=2 | inconclusive | Scout 引用不存在的 lead id（模型幻觉引用，fail-closed 正确拒绝） |
+| r3 | rounds=2 | failed（no-matching） | 1494 s / 100 调用 / 16 线索，scout 轮数耗尽（预算剩 60）；3 个 semantic-supported 全落正确函数（doProlog:4603×2=CVE-2022-43680 本体、storeEntityValue:6073） |
+| r4 | rounds=3 | failed（no-matching） | 1022 s / 71 调用；3 个 semantic-supported（doProlog:4603、2738、6806） |
+
+**结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
+**检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
+未闭合环节**（expat 该 UAF 的触发需要"计数分配器+外部实体+正确分配序号"的
+多步组合，历史上手动战役 v5 的 21 个实验也只到 semantic-supported）。
+附带信号：r3/r4 的 fixed 侧各产出 1/3 个 semantic-supported 假设（pilot 合同
+按目标 cwe+path 判定故 passed）——与配对基准真模型 FP 1/8 的语义层信号一致，
+语义层在偏净代码上会产假设是已知特征，runtime 层是收敛关键。
+r3 排查顺带修复发现层两处盲区（顶行首裸名/宏别名，`1d65100`）。
+bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
