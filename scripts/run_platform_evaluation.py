@@ -1726,17 +1726,34 @@ def build_llm_config(
             "or set LIMA_LLM_BASE_URL and LIMA_CXX_AGENT_MODEL (or "
             "LIMA_LLM_MODEL); use --fake-llm for the offline scripted run"
         )
-    return (
-        {
-            "provider": provider,
-            "base_url": base_url,
-            "api_key": api_key,
-            "model": model,
-            "headers": {},
-        },
-        provider,
-        model,
-    )
+    config: dict[str, Any] = {
+        "provider": provider,
+        "base_url": base_url,
+        "api_key": api_key,
+        "model": model,
+        "headers": {},
+    }
+    request_params = environment.get(
+        "LIMA_CXX_AGENT_REQUEST_PARAMS_JSON", ""
+    ).strip()
+    if request_params:
+        # Operator-trusted per-provider parameters (e.g. the GLM thinking
+        # toggle); mirrors the validation CLI passthrough.  Malformed JSON
+        # fails closed -- a half-applied parameter set is worse than none.
+        try:
+            parsed = json.loads(request_params)
+        except ValueError as exc:
+            raise ProviderNotConfigured(
+                "provider-not-configured: LIMA_CXX_AGENT_REQUEST_PARAMS_JSON "
+                f"is not valid JSON: {exc}"
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise ProviderNotConfigured(
+                "provider-not-configured: LIMA_CXX_AGENT_REQUEST_PARAMS_JSON "
+                "must be a JSON object"
+            )
+        config["request_params"] = parsed
+    return config, provider, model
 
 
 # ------------------------------------------------------------------------ CLI

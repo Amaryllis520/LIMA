@@ -80,13 +80,28 @@ OPM 系仓库（如 opm-common / opm-simulators）的论文侧运行尚未执行
 | 平台跑 | 未执行 | — | — |
 | 档案 | 未执行 | — | — |
 
-## 4. OpenHarmony（占位——仅仓库接入差异）
+## 4. OpenHarmony 实战扫描记录（2026-10-07 ~ 10-09）
 
-内存包行为在 OpenHarmony 与油气仓库上同构（设计 §9.8）；接入差异只在
-仓库导入与离线依赖预处理。沙箱不开外网，依赖一律沙箱外预处理；完整
-流程（快照限额放开参数组、tmpfs/内存、受信构建门禁、OpenHarmony 注意
-事项）见 `deploy/competition/README.md` §4/§5 与
-`.env.competition.example`。执行后按 §3 同样格式回填。
+与 §3 的双版本验证模式互补，本节为 master 快照实战扫描模式（真实 Sidecar +
+真实 glm-5.3 全链，检测脚本 `.zcode/tmp/detect.py`，工作区
+`D:\OpenHarmonyPilot\`）。接入差异（仓库导入/离线依赖/快照限额参数组）见
+`deploy/competition/README.md` §4/§5。
+
+| 战役 | 目标（语言） | 耗时/调用 | 产出 | 人工核验终局 |
+|---|---|---|---|---|
+| 首战 cJSON | third_party_cJSON master（C） | 72 s | 0 finding 0 误报 | 干净空手（facts 441 条、0 候选→发现回退→Scout 全否决） |
+| 第二战 dsoftbus | communication_dsoftbus master（C） | 6180 s / 16 实验 | 2 semantic-supported + 1 弃权 | CWE-416@693 锁生命周期竞态：代码级成立、本容器运行时归因未达 D3，按奖励计划表单口径本地留档；CWE-125@853 人工判疑似误报关闭 |
+| 第三战 avrcp | communication_bluetooth_service avrcp_ct_profile.cpp（C++，两轮） | 2602 s / 27 实验 | 1 semantic-supported | **运行时证据闭合**：CWE-476+CWE-416 复合（TOCTOU 空解引用 + 临时 shared_ptr 所有权剥离 UAF）；朴素判空补丁不可修（10 连发双对照），所有权修复 10/10 存活。证据 `.zcode/reports/bt-avrcp-cwe476-verification/`（含 VERIFICATION.md 与 4 份 ASan 日志）；报告草稿留档待处置 |
+| 第四战 l2cap | l2cap_le.c C 栈（C，验收战四轮） | 1454 s / 13 实验 | 1 semantic-supported + 3 弃权 | CWE-416@1540：险模式真（回调-仍挂链-后释放）、当下不可达（唯一回调方 EATT 不重入）——潜伏型 API 契约脆弱性 |
+
+战果驱动的平台修复（提交见 PR #266）：C++ 限定名行定位（`0cd5008`）、
+专家契约字段上限预告（`749b980`）、桩链接策略与 Critic 所有权规则
+（`233a841`）、master→Release/LTS 对齐复核工具（`dc27258`）。
+
+诚实边界：master 扫描不等于受支持 Release/LTS 版本（对齐复核用
+`scripts/check_finding_on_branches.py`）；"专家自主使用桩闭包"目前仅间接
+证据（对比旧战役驱动全灭于编译关 vs 本轮 13/27 实验全部执行）；C++ TU 的
+确定性 facts 层为 0（全靠 LLM 发现回退）。
 
 ## 5. 配对基准（`evaluation_data/platform_cases/`）
 
