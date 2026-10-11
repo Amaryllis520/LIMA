@@ -118,6 +118,8 @@ class RepositoryWorkspace:
         max_total_bytes: int = 20 * 1024 * 1024,
         extensions: Optional[Iterable[str]] = None,
         ignored_directories: Optional[Iterable[str]] = None,
+        admitted_files: Iterable[str] | None = None,
+        metadata_files: Iterable[str] | None = None,
     ) -> None:
         candidate = Path(root).expanduser().resolve(strict=True)
         if not candidate.is_dir():
@@ -136,6 +138,38 @@ class RepositoryWorkspace:
         self.ignored_directories = frozenset(
             set(DEFAULT_IGNORED_DIRECTORIES) | set(ignored_directories or ())
         )
+        # IP-0023 W-1 (Packet v5.1 section 4.3.1, conditional shared-layer
+        # additive whitelist): both default to None = unrestricted, in which
+        # case every behaviour below stays byte-identical to the legacy view.
+        self._admitted_files = (
+            None if admitted_files is None else frozenset(admitted_files)
+        )
+        self._metadata_files = (
+            None if metadata_files is None else frozenset(metadata_files)
+        )
+
+    @property
+    def admitted_files(self) -> frozenset[str] | None:
+        """S1 source-view slice (workspace-relative POSIX paths; None = unrestricted)."""
+
+        return self._admitted_files
+
+    @property
+    def metadata_files(self) -> frozenset[str] | None:
+        """Own-manifest metadata view (None = unrestricted)."""
+
+        return self._metadata_files
+
+    def _read_admission(self) -> frozenset[str] | None:
+        """Return the read-admission union, or None when the view is unrestricted."""
+
+        if self._admitted_files is None and self._metadata_files is None:
+            return None
+        union: set[str] = set()
+        for group in (self._admitted_files, self._metadata_files):
+            if group is not None:
+                union.update(group)
+        return frozenset(union)
 
     def _record_skip(self, inventory: WorkspaceInventory, reason: str) -> None:
         inventory.skipped[reason] = inventory.skipped.get(reason, 0) + 1
@@ -177,15 +211,25 @@ class RepositoryWorkspace:
             for name in sorted(directory_names):
                 child = current / name
                 if name in self.ignored_directories:
-                    self._record_skip(result, "ignored-directory")
+                    # Restricted views never re-count directory-level skips:
+                    # the repository-level workspace already recorded them.
+                    if self._admitted_files is None:
+                        self._record_skip(result, "ignored-directory")
                 elif child.is_symlink():
-                    self._record_skip(result, "symlink")
+                    if self._admitted_files is None:
+                        self._record_skip(result, "symlink")
                 else:
                     kept_directories.append(name)
             directory_names[:] = kept_directories
 
             for name in sorted(file_names):
                 path = current / name
+                if self._admitted_files is not None:
+                    restricted_relative = path.relative_to(self.root).as_posix()
+                    if restricted_relative not in self._admitted_files:
+                        # Outside the S1 slice: not discovered, not counted as
+                        # skipped, and never part of any statistic (W-1).
+                        continue
                 if path.is_symlink():
                     self._record_skip(result, "symlink")
                 elif name in DEFAULT_IGNORED_FILES or name.startswith(".env."):
@@ -243,8 +287,19 @@ class RepositoryWorkspace:
             result.total_bytes += size
         return result
 
+    def _require_read_admission(self, resolved: Path) -> None:
+        allowed = self._read_admission()
+        if allowed is None:
+            return
+        relative = resolved.relative_to(self.root).as_posix()
+        if relative not in allowed:
+            raise ValueError(
+                "workspace path is not admitted in the restricted view"
+            )
+
     def read_text(self, relative_path: str | os.PathLike[str]) -> str:
         path = self._safe_path(relative_path)
+        self._require_read_admission(path)
         if path.stat().st_size > self.max_file_bytes:
             raise ValueError("workspace file exceeds the per-file size limit")
         # Decode raw bytes without universal-newline translation: the
@@ -255,7 +310,9 @@ class RepositoryWorkspace:
 
     def absolute_file(self, relative_path: str | os.PathLike[str]) -> Path:
         """Resolve an inventoried file while enforcing the workspace boundary."""
-        return self._safe_path(relative_path)
+        path = self._safe_path(relative_path)
+        self._require_read_admission(path)
+        return path
 
     def iter_text(self, inventory: Optional[WorkspaceInventory] = None) -> Iterator[tuple[str, str]]:
         snapshot = inventory or self.inventory()
