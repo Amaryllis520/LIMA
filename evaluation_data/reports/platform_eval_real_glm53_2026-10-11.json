@@ -1,0 +1,764 @@
+{
+  "schema_version": 1,
+  "case_count": 6,
+  "revision_count": 12,
+  "counted_revision_count": 12,
+  "detection_rate": {
+    "rate": 0.0,
+    "detected": 0,
+    "total": 4,
+    "definition": "vulnerable revisions with an expected positive final state that reached exactly that state (accuracy/completeness mapping)"
+  },
+  "false_positive_rate": {
+    "rate": 0.125,
+    "false_positives": 1,
+    "total": 8,
+    "definition": "non-positive expected revisions (fixed/clean/non-security sides) that produced any Finding -- the false-positive penalty mapping"
+  },
+  "non_security_filter_rate": {
+    "rate": 0.0,
+    "filtered": 0,
+    "total": 1,
+    "definition": "non-security cases (competition note 3) whose revisions all produced zero Findings; the hypothesis contract's closed memory-pack CWE vocabulary is the filter"
+  },
+  "experiment_convergence": {
+    "rate": 0.0,
+    "converged": 0,
+    "total": 1,
+    "round_budget": 2,
+    "definition": "revisable cases (design section 11 revision-loop sample) whose vulnerable side recorded an executed hit within the round budget"
+  },
+  "poc_stability": {
+    "rate": null,
+    "stable": 0,
+    "total": 0,
+    "runs_per_poc": 3,
+    "definition": "executed-hit revisions whose final PoC driver triggered the hypothesized bug class in runs_per_poc repeated executions (competition PoC-stability mapping)"
+  },
+  "paired_detection": {
+    "rate": 0.0,
+    "correct": 0,
+    "total": 6,
+    "definition": "pairs where both revisions finished in their expected state"
+  },
+  "llm_usage": {
+    "scout_calls_total": 8,
+    "specialist_calls_total": 5,
+    "critic_calls_total": 5,
+    "reply_bytes_total": 0,
+    "reply_bytes_mean": 0.0,
+    "accounting": "agent wire calls charged by the pipeline; reply size in bytes as the transport-level proxy (no provider token accounting)"
+  },
+  "latency_seconds": {
+    "total": 179.8613341000455,
+    "mean": 14.988444508337125
+  },
+  "cases": [
+    {
+      "case_id": "uaf-direct",
+      "kind": "direct",
+      "non_security": false,
+      "revisions": {
+        "vulnerable": {
+          "counted": true,
+          "expected_final_state": "runtime-confirmed",
+          "expected_findings": 1,
+          "observed_final_state": "fact-verified",
+          "observed_states": [
+            "fact-verified"
+          ],
+          "state_exact": false,
+          "finding_count": 1,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 1,
+            "specialist_calls": 1,
+            "critic_calls": 1,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 23.666326400008984,
+          "diagnostics": []
+        },
+        "fixed": {
+          "counted": true,
+          "expected_final_state": "none",
+          "expected_findings": 0,
+          "observed_final_state": "none",
+          "observed_states": [],
+          "state_exact": true,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 0,
+            "specialist_calls": 0,
+            "critic_calls": 0,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 1.5863598999858368,
+          "diagnostics": [
+            "no-leads-available",
+            "leads-from-llm-discovery: 0 leads, 1 calls over 1 windows"
+          ]
+        }
+      },
+      "pair_correct": false
+    },
+    {
+      "case_id": "null-deref-direct",
+      "kind": "direct",
+      "non_security": false,
+      "revisions": {
+        "vulnerable": {
+          "counted": true,
+          "expected_final_state": "runtime-confirmed",
+          "expected_findings": 1,
+          "observed_final_state": "semantic-supported",
+          "observed_states": [
+            "semantic-supported"
+          ],
+          "state_exact": false,
+          "finding_count": 1,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 1,
+            "specialist_calls": 1,
+            "critic_calls": 1,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 21.86275819997536,
+          "diagnostics": []
+        },
+        "fixed": {
+          "counted": true,
+          "expected_final_state": "none",
+          "expected_findings": 0,
+          "observed_final_state": "none",
+          "observed_states": [],
+          "state_exact": true,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 0,
+            "specialist_calls": 0,
+            "critic_calls": 0,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 1.891407600021921,
+          "diagnostics": [
+            "no-leads-available",
+            "leads-from-llm-discovery: 0 leads, 1 calls over 1 windows"
+          ]
+        }
+      },
+      "pair_correct": false
+    },
+    {
+      "case_id": "overflow-direct",
+      "kind": "direct",
+      "non_security": false,
+      "revisions": {
+        "vulnerable": {
+          "counted": true,
+          "expected_final_state": "runtime-confirmed",
+          "expected_findings": 1,
+          "observed_final_state": "abstain",
+          "observed_states": [
+            "abstain"
+          ],
+          "state_exact": false,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 1,
+            "specialist_calls": 1,
+            "critic_calls": 1,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 19.454964200005634,
+          "diagnostics": []
+        },
+        "fixed": {
+          "counted": true,
+          "expected_final_state": "none",
+          "expected_findings": 0,
+          "observed_final_state": "none",
+          "observed_states": [],
+          "state_exact": true,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 0,
+            "specialist_calls": 0,
+            "critic_calls": 0,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 6.37372659999528,
+          "diagnostics": [
+            "no-leads-available",
+            "leads-from-llm-discovery: 0 leads, 1 calls over 1 windows"
+          ]
+        }
+      },
+      "pair_correct": false
+    },
+    {
+      "case_id": "rebind-revisable",
+      "kind": "revisable",
+      "non_security": false,
+      "revisions": {
+        "vulnerable": {
+          "counted": true,
+          "expected_final_state": "runtime-confirmed",
+          "expected_findings": 1,
+          "observed_final_state": "abstain",
+          "observed_states": [
+            "abstain"
+          ],
+          "state_exact": false,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 1,
+            "specialist_calls": 1,
+            "critic_calls": 1,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 33.39279099999112,
+          "diagnostics": [
+            "contract-violation at target d68d0a6f7fd3ed998537f4648792f422c879c8524208790e1aa66bf526380468"
+          ]
+        },
+        "fixed": {
+          "counted": true,
+          "expected_final_state": "none",
+          "expected_findings": 0,
+          "observed_final_state": "none",
+          "observed_states": [],
+          "state_exact": true,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 0,
+            "specialist_calls": 0,
+            "critic_calls": 0,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 2.370487600011984,
+          "diagnostics": [
+            "no-leads-available",
+            "leads-from-llm-discovery: 0 leads, 1 calls over 1 windows"
+          ]
+        }
+      },
+      "pair_correct": false
+    },
+    {
+      "case_id": "clean-function",
+      "kind": "clean",
+      "non_security": false,
+      "revisions": {
+        "vulnerable": {
+          "counted": true,
+          "expected_final_state": "abstain",
+          "expected_findings": 0,
+          "observed_final_state": "none",
+          "observed_states": [],
+          "state_exact": false,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 1,
+            "specialist_calls": 0,
+            "critic_calls": 0,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 2.164562800026033,
+          "diagnostics": []
+        },
+        "fixed": {
+          "counted": true,
+          "expected_final_state": "abstain",
+          "expected_findings": 0,
+          "observed_final_state": "none",
+          "observed_states": [],
+          "state_exact": false,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 1,
+            "specialist_calls": 0,
+            "critic_calls": 0,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 5.382437700027367,
+          "diagnostics": []
+        }
+      },
+      "pair_correct": false
+    },
+    {
+      "case_id": "non-security-filter",
+      "kind": "clean",
+      "non_security": true,
+      "revisions": {
+        "vulnerable": {
+          "counted": true,
+          "expected_final_state": "abstain",
+          "expected_findings": 0,
+          "observed_final_state": "none",
+          "observed_states": [],
+          "state_exact": false,
+          "finding_count": 0,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 1,
+            "specialist_calls": 0,
+            "critic_calls": 0,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 3.2999366000003647,
+          "diagnostics": []
+        },
+        "fixed": {
+          "counted": true,
+          "expected_final_state": "abstain",
+          "expected_findings": 0,
+          "observed_final_state": "semantic-supported",
+          "observed_states": [
+            "semantic-supported"
+          ],
+          "state_exact": false,
+          "finding_count": 1,
+          "first_hit_round": null,
+          "llm": {
+            "scout_calls": 1,
+            "specialist_calls": 1,
+            "critic_calls": 1,
+            "reply_bytes": 0
+          },
+          "elapsed_seconds": 58.41557549999561,
+          "diagnostics": []
+        }
+      },
+      "pair_correct": false
+    }
+  ],
+  "records": [
+    {
+      "case_id": "uaf-direct",
+      "revision": "vulnerable",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/buffer.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 0,
+      "targets": [
+        {
+          "target_id": "123ca2e88507cc43b65a8f6458093a8fee473cc9cf71fee037b5e66a89b0f793",
+          "path": "src/buffer.cpp",
+          "line": 11,
+          "cwe": "CWE-416",
+          "state": "fact-verified",
+          "finding": true,
+          "proof_verdict": "PASS",
+          "rejected_reason": "",
+          "experiment_log": [
+            {
+              "round": 1,
+              "stage": "run",
+              "hit": false,
+              "error_type": ""
+            }
+          ],
+          "driver_sha256": "9e455a23a079354374b40e63be2cf604e59383f2dd0f9456414235e9db3d32c7"
+        }
+      ],
+      "finding_count": 1,
+      "experiment_count": 1,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 1,
+        "specialist_calls": 1,
+        "critic_calls": 1,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 23.666326400008984,
+      "diagnostics": []
+    },
+    {
+      "case_id": "uaf-direct",
+      "revision": "fixed",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/buffer.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 0,
+      "targets": [],
+      "finding_count": 0,
+      "experiment_count": 0,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 0,
+        "specialist_calls": 0,
+        "critic_calls": 0,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 1.5863598999858368,
+      "diagnostics": [
+        "no-leads-available",
+        "leads-from-llm-discovery: 0 leads, 1 calls over 1 windows"
+      ]
+    },
+    {
+      "case_id": "null-deref-direct",
+      "revision": "vulnerable",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/session.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 1,
+      "targets": [
+        {
+          "target_id": "lead-001",
+          "path": "src/session.cpp",
+          "line": 12,
+          "cwe": "CWE-476",
+          "state": "semantic-supported",
+          "finding": true,
+          "proof_verdict": "",
+          "rejected_reason": "",
+          "experiment_log": [
+            {
+              "round": 1,
+              "stage": "run",
+              "hit": false,
+              "error_type": ""
+            },
+            {
+              "round": 2,
+              "stage": "run",
+              "hit": false,
+              "error_type": ""
+            }
+          ],
+          "driver_sha256": "7bd064979640d8c269c97ee7a09a742c383f3dbb856bb8f3aa04024721693362"
+        }
+      ],
+      "finding_count": 1,
+      "experiment_count": 2,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 1,
+        "specialist_calls": 1,
+        "critic_calls": 1,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 21.86275819997536,
+      "diagnostics": []
+    },
+    {
+      "case_id": "null-deref-direct",
+      "revision": "fixed",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/session.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 0,
+      "targets": [],
+      "finding_count": 0,
+      "experiment_count": 0,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 0,
+        "specialist_calls": 0,
+        "critic_calls": 0,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 1.891407600021921,
+      "diagnostics": [
+        "no-leads-available",
+        "leads-from-llm-discovery: 0 leads, 1 calls over 1 windows"
+      ]
+    },
+    {
+      "case_id": "overflow-direct",
+      "revision": "vulnerable",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/frame.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 1,
+      "targets": [
+        {
+          "target_id": "lead-001",
+          "path": "src/frame.cpp",
+          "line": 6,
+          "cwe": "CWE-787",
+          "state": "abstain",
+          "finding": false,
+          "proof_verdict": "",
+          "rejected_reason": "critic-veto",
+          "experiment_log": [
+            {
+              "round": 1,
+              "stage": "run",
+              "hit": false,
+              "error_type": ""
+            }
+          ],
+          "driver_sha256": "cf238ef5ad48778981c018b13bdae7c9430cb01580bd4c0700d684a75f08149e"
+        }
+      ],
+      "finding_count": 0,
+      "experiment_count": 1,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 1,
+        "specialist_calls": 1,
+        "critic_calls": 1,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 19.454964200005634,
+      "diagnostics": []
+    },
+    {
+      "case_id": "overflow-direct",
+      "revision": "fixed",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/frame.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 0,
+      "targets": [],
+      "finding_count": 0,
+      "experiment_count": 0,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 0,
+        "specialist_calls": 0,
+        "critic_calls": 0,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 6.37372659999528,
+      "diagnostics": [
+        "no-leads-available",
+        "leads-from-llm-discovery: 0 leads, 1 calls over 1 windows"
+      ]
+    },
+    {
+      "case_id": "rebind-revisable",
+      "revision": "vulnerable",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/cursor.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 0,
+      "targets": [
+        {
+          "target_id": "d68d0a6f7fd3ed998537f4648792f422c879c8524208790e1aa66bf526380468",
+          "path": "src/cursor.cpp",
+          "line": 18,
+          "cwe": "",
+          "state": "abstain",
+          "finding": false,
+          "proof_verdict": "",
+          "rejected_reason": "contract-violation",
+          "experiment_log": [],
+          "driver_sha256": ""
+        }
+      ],
+      "finding_count": 0,
+      "experiment_count": 0,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 1,
+        "specialist_calls": 1,
+        "critic_calls": 1,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 33.39279099999112,
+      "diagnostics": [
+        "contract-violation at target d68d0a6f7fd3ed998537f4648792f422c879c8524208790e1aa66bf526380468"
+      ]
+    },
+    {
+      "case_id": "rebind-revisable",
+      "revision": "fixed",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/cursor.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 0,
+      "targets": [],
+      "finding_count": 0,
+      "experiment_count": 0,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 0,
+        "specialist_calls": 0,
+        "critic_calls": 0,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 2.370487600011984,
+      "diagnostics": [
+        "no-leads-available",
+        "leads-from-llm-discovery: 0 leads, 1 calls over 1 windows"
+      ]
+    },
+    {
+      "case_id": "clean-function",
+      "revision": "vulnerable",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/label.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 1,
+      "targets": [],
+      "finding_count": 0,
+      "experiment_count": 0,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 1,
+        "specialist_calls": 0,
+        "critic_calls": 0,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 2.164562800026033,
+      "diagnostics": []
+    },
+    {
+      "case_id": "clean-function",
+      "revision": "fixed",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/label.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 1,
+      "targets": [],
+      "finding_count": 0,
+      "experiment_count": 0,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 1,
+        "specialist_calls": 0,
+        "critic_calls": 0,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 5.382437700027367,
+      "diagnostics": []
+    },
+    {
+      "case_id": "non-security-filter",
+      "revision": "vulnerable",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/ratio.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 1,
+      "targets": [],
+      "finding_count": 0,
+      "experiment_count": 0,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 1,
+        "specialist_calls": 0,
+        "critic_calls": 0,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 3.2999366000003647,
+      "diagnostics": []
+    },
+    {
+      "case_id": "non-security-filter",
+      "revision": "fixed",
+      "counted": true,
+      "build_context_source": "repository-compdb",
+      "translation_units": [
+        "src/ratio.cpp"
+      ],
+      "coverage_gaps": [],
+      "leads": 1,
+      "targets": [
+        {
+          "target_id": "lead-001",
+          "path": "src/ratio.cpp",
+          "line": 5,
+          "cwe": "CWE-190",
+          "state": "semantic-supported",
+          "finding": true,
+          "proof_verdict": "",
+          "rejected_reason": "",
+          "experiment_log": [
+            {
+              "round": 1,
+              "stage": "run",
+              "hit": false,
+              "error_type": ""
+            },
+            {
+              "round": 2,
+              "stage": "run",
+              "hit": false,
+              "error_type": ""
+            }
+          ],
+          "driver_sha256": "08682e0c082da5f07246c5366662030d4f32b5a5b9196f61d65719369cdab2d2"
+        }
+      ],
+      "finding_count": 1,
+      "experiment_count": 2,
+      "poc_stability": null,
+      "llm": {
+        "scout_calls": 1,
+        "specialist_calls": 1,
+        "critic_calls": 1,
+        "reply_bytes": 0
+      },
+      "elapsed_seconds": 58.41557549999561,
+      "diagnostics": []
+    }
+  ],
+  "diagnostics": [
+    "poc_stability denominator is zero"
+  ],
+  "mode": "auto",
+  "llm_transport": "provider",
+  "identity": {
+    "mode": "auto",
+    "llm_transport": "provider",
+    "provider": "custom",
+    "model": "glm-5.3",
+    "platform_pipeline_sha256": "f0ea32edb2de5c17978db91d7ce24cd03bebcb98964121d09e667a9ce8aaf533",
+    "case_data_sha256": "5970f960e33df6016dc9c4890ba4c5d2e9872694591a466d95d2b781487a8e65"
+  },
+  "validity_boundaries": [
+    "Synthetic and pinned pairs do not measure production detection capability.",
+    "The pipeline input is the fixture workspace plus the served fact bundle and the canned triage leads only; labels are applied outside the pipeline.",
+    "The Sidecar half is a canned /v1/uaf-facts bundle and the reproduction half is a hash-keyed scripted workbench per committed case; real Clang extraction and real container ASan runs are verified separately and recorded as unverified in docs/COMPETITION_VALIDATION.md until they happen.",
+    "A null metric means its denominator was zero, not a perfect score.",
+    "The PoC-stability probe under the scripted workbench is stable by construction; it carries information only in real workbench runs.",
+    "The reply-byte LLM proxy is not provider token accounting."
+  ]
+}

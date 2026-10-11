@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 平台管线闭环（Scout→假设→实验→修正→裁决） | `tests/test_platform_evaluation.py`（26 测试，零网络 Fake） | 已验证（Fake，2026-09-11） | 本仓库 unittest；`scripts/run_platform_evaluation.py --fake-llm` 全绿 |
 | 配对基准指标（检测率/误报率/非安全过滤/实验收敛/PoC 稳定性） | `scripts/run_platform_evaluation.py` 全 6 案例 Fake 跑批 | 已验证（Fake，按构造确定性） | 报告 `detection_rate=1.0`、`false_positive_rate=0.0`、`non_security_filter_rate=1.0`、`experiment_convergence=1.0`、`poc_stability=1.0`（脚本是哈希判定，稳定性指标仅真实工作台下有信息量） |
-| 真实模型分类（Specialist/Critic/Scout 走真实 provider） | `scripts/run_platform_evaluation.py`（不带 `--fake-llm`，配 `--provider-url/--model`） | 未验证（Task 10 范围内禁止真实调用，归主 agent 执行） | — |
+| 真实模型分类（Specialist/Critic/Scout 走真实 provider） | `scripts/run_platform_evaluation.py`（不带 `--fake-llm`，glm-5.3 本地网关） | 已验证（glm-5.3，2026-10-11；语义检测 2/4、误报 1/8、非安全过滤 0/1，runtime 类指标受哈希工作台结构性封顶） | `evaluation_data/reports/platform_eval_real_glm53_2026-10-11.json`（§5 补充） |
 | 真实容器 ASan 实证（`runtime-confirmed` 的 D3 证据） | Docker clang-14/ASan 沙箱真实执行 PoC | 未验证（走真实环境验收，独立记录） | — |
 | 真实仓库全链检测 | ResInsight 限定子集（UAF v2 全链） | 已验证（诚实 abstain，2026-09-12，见 §2） | `.superpowers/tmp/uaf-demo-outcome.json` |
 
@@ -181,3 +181,23 @@ Windows 工作区 CRLF 检出伪影（提交内容与 main 逐字节一致；LF 
 吻合，非代码回归）；`ReproContainerTests` 偶发 `asan-runtime-segv-retried` 为
 `cxx_analyzer/repro.py` 文档声明的受限容器 ASan 渲染器噪声类（重试机制消化）。
 本分支新增的 18 个 git 夹具测试在容器内因镜像无 git 干净跳过（宿主全绿）。
+
+### §5 补充：真模型评测首跑（glm-5.3，2026-10-11）
+
+状态表第 3 行落地。报告 `evaluation_data/reports/platform_eval_real_glm53_2026-10-11.json`
+（已做密钥扫描，零泄漏）。**结构性口径**：脚本工作台按 canned 驱动精确哈希判
+PoC，真模型在构造上不可达 runtime 状态——检测率/收敛/PoC 稳定性三项在本
+评测器下对真模型结构性封顶（真容器 ASan 由独立验收线覆盖）。**有效测得**：
+
+| 指标 | 真模型实测 | 解读 |
+|---|---|---|
+| 语义层检测 | 2/4（uaf/null-deref 各 1 finding；overflow 漏报；rebind 因模型伪造 target_id 被 fail-closed 拒绝） | 顶层 detection_rate=0.0 系期望状态锚定 runtime 所致，语义层才是本评测器下真实能力读数 |
+| 误报率 | 1/8（clean 案例 4/4 全零 ✓；FP=非安全案例 fixed 侧） | 误报纪律 7/8 |
+| 非安全过滤 | 0/1 | **真实缺口**：FP 为 CWE-190（词表内）——词表封闭性挡不住算术代码上的溢出假设，过滤需内存安全影响证明（backlog） |
+| 总耗时 | 180 s / 12 revision | — |
+
+### §5 补充 2：检测率指标的真模型口径（backlog）
+
+`run_platform_evaluation.py` 的 detection_rate 以案例期望终态（runtime 锚定）
+为分母，真模型模式下结构性为 0。已立项：增加语义层级补充指标
+（vulnerable 侧产出任意正向状态 finding 的比例），Fake/真模型两模式同口径可算。
