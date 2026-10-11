@@ -2579,7 +2579,10 @@ class ChannelIsolationTests(unittest.TestCase):
             for component in discovery.components:
                 for ref in component.manifests:
                     self.assertNotIn("linked", ref.path)
-            self.assertEqual(discovery.metadata_manifest_count, 0)
+            # The channel discovers the repo's own pyproject.toml (count 1)
+            # and never follows the symlinked directory: the outside
+            # requirements.txt stays out of the metadata manifest count.
+            self.assertEqual(discovery.metadata_manifest_count, 1)
         finally:
             shutil.rmtree(root, ignore_errors=True)
             shutil.rmtree(outside, ignore_errors=True)
