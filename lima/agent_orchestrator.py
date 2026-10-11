@@ -972,18 +972,23 @@ def _resolve_discovery_line(
     like that function's definition.  A match only counts when a body
     brace opens before any semicolon -- prototypes (forward declarations)
     are skipped, otherwise the Scout reviews a declaration snippet and
-    correctly discards the lead.  ``None`` when nothing locates and no
-    usable approximate line exists.
+    correctly discards the lead.  When the name never appears as a
+    definition, an object-like macro alias (``#define shortName
+    RealFunction``) is followed to its target once -- public APIs are
+    routinely reached through such aliases (real case: expat's
+    ``externalEntityParserCreate`` masking ``XML_ExternalEntityParserCreate``).
+    ``None`` when nothing locates and no usable approximate line exists.
     """
 
     if function:
         # The prefix class must accept C++ definition forms the lead may
-        # name unqualified: ``Class::method(``, ``std::string Class::m(``,
-        # reference returns (``const T &m(``).  ':' for scope qualifiers,
-        # '&' for references; '<'/'>' for template return types.
+        # name unqualified (``Class::method(``, ``std::string Class::m(``,
+        # reference returns, template returns) and must be OPTIONAL so a
+        # bare name at column zero still matches (real case: expat's
+        # XML_ExternalEntityParserCreate).
         pattern = re.compile(
-            r"^[A-Za-z_][A-Za-z0-9_\s\*(,):&<>]*?\b" + re.escape(function)
-            + r"\s*\(",
+            r"^(?:[A-Za-z_][A-Za-z0-9_\s\*(,):&<>]*?)?\b"
+            + re.escape(function) + r"\s*\(",
             re.MULTILINE,
         )
         for match in pattern.finditer(source):
@@ -992,6 +997,16 @@ def _resolve_discovery_line(
             semicolon = window.find(";")
             if brace != -1 and (semicolon == -1 or brace < semicolon):
                 return source.count("\n", 0, match.start()) + 1
+        alias = re.search(
+            r"^[ \t]*#[ \t]*define[ \t]+" + re.escape(function)
+            + r"[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*$",
+            source,
+            re.MULTILINE,
+        )
+        if alias and alias.group(1) != function:
+            return _resolve_discovery_line(
+                source, alias.group(1), approximated,
+            )
     return approximated if approximated >= 1 else None
 
 

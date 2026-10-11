@@ -1004,6 +1004,31 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertEqual(11, _resolve_discovery_line(source, "Qux", 0))
         self.assertIsNone(_resolve_discovery_line(source, "Nopes", 0))
 
+    def test_discovery_line_matches_column_zero_names_and_macro_alias(self):
+        # Real pilot-r3 follow-up: expat's public API definitions put the
+        # bare name at column zero (XML_Parser XMLCALL\nXML_Foo(...)), which
+        # the mandatory-prefix pattern could never match; and C codebases
+        # commonly reach public functions through object-like macro aliases.
+        # (The r3 lead that motivated the investigation named a hallucinated
+        # function and stays correctly dropped -- name compliance is the
+        # model's job, alias following just covers the legitimate pattern.)
+        from lima.agent_orchestrator import _resolve_discovery_line
+
+        source = (
+            "#define shortName XML_RealName\n"
+            "XML_Parser XMLCALL\n"
+            "XML_RealName(XML_Parser oldParser) {\n"
+            "    return oldParser;\n"
+            "}\n"
+        )
+        # Column-zero definition resolves via its return-type line.
+        self.assertEqual(2, _resolve_discovery_line(source, "XML_RealName", 0))
+        # The macro alias follows one hop to the real definition.
+        self.assertEqual(2, _resolve_discovery_line(source, "shortName", 0))
+        # A self-referential alias must not loop.
+        source2 = "#define loop loop\nint loop(void) {\n    return 0;\n}\n"
+        self.assertEqual(2, _resolve_discovery_line(source2, "loop", 0))
+
     def test_discovery_abstain_keeps_no_leads_outcome(self):
         transport = ScriptedPlatformTransport(
             discovery=[discovery_json([])],
