@@ -51,6 +51,11 @@ IMPL Assignment + 主会话真实派发五条件齐备后启动。
   语义复用既有码扩展触发面（R66-02 映射）。
 - journal 模式单值选定：**rollback journal（DELETE）**（Assignment §7.5 第 7 条唯一下放项；
   理由与验证边界见 §7.3）。
+- 同范围最小修订（2026-10-11，ER Record v3 四项 Shadow Findings SF-D1R-01..04）：按 Coordinator
+  裁定 CR-D1R-01（seal_log 状态判定全函数/方向性单值——§4.4/§5.3/§6.1）、CR-D1R-02（落点
+  规约：四项一次 commit、版本维持 2.0、§1.2/§1.3 登记指针）、CR-D1R-03（SF-D1R-02/03/04
+  句级单值：P1 非常规文件映射、契约层 schema-major 拒绝入口归属、限额计账单值与 DDL 排序
+  规则纪律）执行；本行即该 delta 的修订说明登记。
 
 ### 1.2 六项 R66 ↔ 受影响章节/被替换旧条款对照表
 
@@ -61,7 +66,7 @@ IMPL Assignment + 主会话真实派发五条件齐备后启动。
 | R66-03 | `tenant_storage_key=SHA256(tenant_id 精确 UTF-8 字节).hexdigest()`（小写 64-hex，仅物理目录）；逻辑身份精确比较不变；映射版本绑定 fail-closed（`METADATA_CORRUPT`） | §4.4、§7.2、§8 路径组 | §4.4 blob 键 `blobs/<tenant_id>/...`（约 L187–189）；§7.2 路径表与「尾随 `.`/空格…混叠」表述（约 L334–344） | P6（win32 实测；Linux 未验证→D2）；审核 `synthetic_fs` |
 | R66-04 | 输出校验（类型/字节/上限交集）先于任何 content staging 写入；输入/输出两步分开；超限零内容写入；S4 只做重读复核；写入原语有上限 | §4.2 S2/S3/S4、§6.1、§7.1、§9.1 NFR-01、§8 | §4.2 S3→S4 时序（约 L124–129）；§6.1「staging 可留诊断行」（约 L281）；§7.1 两层说明（约 L325–327）；§9.1 NFR-01 行（约 L411） | P7（真实净化复现 262,119→365,378 + 顺序模型）；审核实测 |
 | R66-05 | 统一限额表（作用域/默认/合法域/硬上限/计数单位/预留-提交-失败-崩溃/稳定错误逐行单值）；计数语义与跨进程额度冻结；单 root 串行临界区+有限等待+SQLite 小记录；同 root limits 不一致→`STORE_CONFIG_CONFLICT`；journal 单值 DELETE | §7.1、§7.3、§7.1d、§8 | §7.1 零散限额行（约 L319–323）；§7.3 无条件 `PRAGMA journal_mode=WAL`（约 L350） | 合同分析级冻结（无实现实测；多进程/crash 兑现归 D2，如实标注）；说明书 §4 R66-05 |
-| R66-06 | 公共合同一次冻结：open 签名 policy 必填注入；get 六字段六步校验顺序；持久 handle 与 close 语义；lineage 最小面+`STAGING_STATE_INVALID`「已 abort」触发删除；`SealedLogReceipt`/`RetrievedLogArtifact` 分型（旧单类型删除） | §4.2 get G1–G6、§4.5、§5.1–5.3（含字段表）、§6.1、§10.1 | §4.5 open 只绑 tenant（约 L202–205）；§5.3 签名无 policy（约 L250–268）；§4.2 get G1–G4（约 L139–145）；§6.1「非本 store、已 abort」（约 L284–286）；§10.1 SF-05/SF-08 | Assignment §7.6 逐字裁定 + §11 单值；源码复核（`ArtifactReference` 六字段，§2.2） |
+| R66-06 | 公共合同一次冻结：open 签名 policy 必填注入；get 六字段六步校验顺序；持久 handle 与 close 语义；lineage 最小面+`STAGING_STATE_INVALID`「已 abort」触发删除；`SealedLogReceipt`/`RetrievedLogArtifact` 分型（旧单类型删除） | §4.2 get G1–G6、§4.5、§5.1–5.3（含字段表）、§6.1、§10.1 | §4.5 open 只绑 tenant（约 L202–205）；§5.3 签名无 policy（约 L250–268）；§4.2 get G1–G4（约 L139–145）；§6.1「非本 store、已 abort」（约 L284–286）；§10.1 SF-05/SF-08 | Assignment §7.6 逐字裁定 + §11 单值；**CR-D1R-01 补裁（seal_log 状态判定全函数/方向性，§4.4）**；源码复核（`ArtifactReference` 六字段，§2.2） |
 
 ### 1.3 旧条款替换核销清单（Assignment §7.7 十六行，逐项核销登记）
 
@@ -79,7 +84,7 @@ IMPL Assignment + 主会话真实派发五条件齐备后启动。
 | 10 | §7.3 无条件 `PRAGMA journal_mode=WAL`（约 L350） | 替换为 DELETE 单值 + 验证边界（§7.3） | 已核销 |
 | 11 | §4.5 open 只绑 tenant + §5.3 签名无 policy（约 L202–205、L250–268） | 替换为 §5.3 逐字冻结签名（policy 必填） | 已核销 |
 | 12 | §4.2 get G1–G4 未冻结六字段逐项校验（约 L139–145） | 替换为 §4.2 G1–G6 六步顺序表 | 已核销 |
-| 13 | §6.1 `STAGING_NOT_FOUND`/`STAGING_STATE_INVALID`「非本 store、已 abort」（约 L284–286） | 「非本 store」删除（同 root 同租户跨实例可重开）；「已 abort」删除（§5.3 handle 触发面、§6.1） | 已核销 |
+| 13 | §6.1 `STAGING_NOT_FOUND`/`STAGING_STATE_INVALID`「非本 store、已 abort」（约 L284–286） | 「非本 store」删除（同 root 同租户跨实例可重开）；「已 abort」删除（§5.3 handle 触发面、§6.1）；2026-10-11 CR-D1R-01 补裁：(b) 收窄为方向性矛盾（仅 declared=`sealed` 而权威行 STAGING；缺行唯一归属 `STAGING_NOT_FOUND`；全函数见 §4.4） | 已核销 |
 | 14 | §5.1/5.2/5.3 `SealedLogArtifact` 单类型与 content 双语义、§10.1 SF-08 | 替换为 `SealedLogReceipt`/`RetrievedLogArtifact`；SF-08 核销（§5.1–5.3、§10.1） | 已核销 |
 | 15 | §10.1 SF-05（abort 载体 D2 二选一） | 核销（裁定=删除触发条件）；§10.1 仅保留仍真实义务 | 已核销 |
 | 16 | §4.3 故障矩阵、§6.1 错误表、§8 测试计划不一致表述 | 同步改写（新增「SEALED 后实物损坏重复 seal」行、限额/计额用例、两平台租户键用例、膨胀反例用例） | 已核销 |
@@ -238,9 +243,9 @@ seal_log(handle)
          通过 → 复用；失败 → 按下行失败语义
       核验失败（任何分支）→ 本次 seal 稳定失败：不新增 SEALED metadata、不覆盖/修复/
       改动原内容与原 SEALED 记录；错误映射（复用既有码，不新增专用码）：链接/reparse
-      异常 → PATH_POLICY_VIOLATION；实际 digest 不符 → BLOB_CORRUPT；size 不符 →
-      BLOB_SIZE_MISMATCH；幂等重试发现实物缺失 → BLOB_MISSING。失败残留（staging 文件
-      与 attempt 行）按 §7.1 统一限额表计额
+      异常、非常规文件（目录/FIFO 等）→ PATH_POLICY_VIOLATION；实际 digest 不符 →
+      BLOB_CORRUPT；size 不符 → BLOB_SIZE_MISMATCH；幂等重试发现实物缺失 →
+      BLOB_MISSING。失败残留（staging 文件与 attempt 行）按 §7.1 统一限额表计额
   P2  同一临界区内 SQLite 单事务（BEGIN IMMEDIATE）提交可见 SEALED metadata：insert
       artifacts 行、seal_attempts STAGING→SEALED、staging 文件目录标记可清理（不自动删）
   P3  返回 SealedLogReceipt(reference, envelope)   ← 成功可见点 = P2 commit；
@@ -248,7 +253,9 @@ seal_log(handle)
 get_log(reference)   【六步校验顺序冻结，R66-06②；错误映射单值】
   G1  Reference 结构/格式校验（六字段形状：schema_name pattern、identifier、64-hex、
       SchemaVersion）→ INVALID_ARGUMENT
-  G2  schema 接受面（`lima.sanitized-log`/`4.0` 之外）→ UNSUPPORTED_SCHEMA
+  G2  schema 接受面（`lima.sanitized-log`/`4.0` 之外）→ UNSUPPORTED_SCHEMA（含契约层
+      SCHEMA_UNKNOWN_MAJOR 及构造期同族 schema 版本拒绝在本入口的映射——SF-D1R-03，
+      §6.1 映射注：版本不在接受面的语义）
   G3  租户绑定 + 权威记录查询：store 绑定受信租户 vs reference.tenant_id；仅 SEALED 行
       可读；租户不符、未知 artifact_id、未封存、**或六字段（schema_name/schema_version/
       artifact_id/tenant_id/repository_snapshot_digest/content_digest）任一与权威记录
@@ -313,8 +320,23 @@ mandatory 不可省略）。`inspect()`（recovery 入口）输出 staging/orpha
   （R66-02）；跨租户同字节各自独立 blob 文件，无全局去重。**逻辑身份不变**：SQL、
   ArtifactReference、ACL/权限比较仍按逻辑 `tenant_id` 精确比较（不 lowercase、不剥尾点、不合并
   租户）。
+- **seal_log 状态判定（全函数，按以下次序唯一归属；CR-D1R-01 单值。declared_state 为 handle
+  声明，权威=`seal_attempts` 行）**：
+  ① handle 绑定 root/tenant 与当前 store 不符 → `STAGING_STATE_INVALID`（触发 (a)，不变）；
+  ② 按 staging_id 查权威行：行不存在（无论 declared_state）→ `STAGING_NOT_FOUND`（**唯一
+  归属**——无行即无可幂等返回的已 seal 身份；缺行是无法解析的身份，不是可矛盾的记录，两码
+  触发面保持不相交）；
+  ③ 行存在且 state=SEALED（declared_state 无论 "staged" 或 "sealed"）→ 幂等成功路径：执行
+  P1 实物完整性核验，通过 → 返回同一 SealedLogReceipt；不通过 → 按 §6.1 seal 路径映射稳定
+  失败。**「handle 声明 staged + 权威行 SEALED」= 幂等重试的正常可达状态**（handle 为 stage
+  时签发的 frozen 对象，seal 不重签发；含 P2 已提交未返回即崩溃后的重试），非矛盾；
+  ④ 行存在且 state=STAGING、declared_state="sealed" → `STAGING_STATE_INVALID`（触发 (b) 的
+  **唯一形态**：handle 声明强于权威行——过度声明）；
+  ⑤ 行存在且 state=STAGING、declared_state="staged" → 正常 seal 路径（P1→P2）。
+  即：§6.1 (b) 的「矛盾」按**方向性**定义——仅「handle 声明 sealed 而权威行为 STAGING」构成
+  矛盾。
 - **同请求幂等（强化，R66-02④）**：同一 staging handle 的 seal 重复/并发调用（含同 root 同可信
-  租户跨实例/跨进程重开 handle 后、含 P2 已提交未返回即崩溃后的重试）返回**同一**
+  租户跨实例/跨进程重开 handle 后、含 P2 已提交未返回即崩溃后的重试）按上列 ③ 返回**同一**
   SealedLogReceipt——由 P2 的单事务 + `seal_attempts.staging_id` 唯一约束裁决，后到者在事务内
   读到胜者已写的 artifact_id 并原样返回；**幂等成功同样执行 P1 的实物完整性核验**（不只看 DB
   行；核验不过 → 按 §6.1 映射稳定失败，不返回假成功）；不产生第二个 artifact。
@@ -437,7 +459,7 @@ class LocalArtifactStore:
 | `staging_id` | str | identifier；系统生成 `"stg-"+uuid4hex(32)` | staging 身份（`seal_attempts` PK）；查无此行且无可幂等返回的已 seal 身份 → `STAGING_NOT_FOUND` |
 | `root_id` | str | 64-hex；root 初始化时生成并记录于 `artifact_store_meta`（**不是主机路径**） | 与当前 store 的 root_id 不符 → `STAGING_STATE_INVALID`（外来 root handle） |
 | `tenant_id` | str | identifier；逻辑租户绑定（非 tenant_key） | 与当前 store 可信租户不符 → `STAGING_STATE_INVALID`（外来租户 handle） |
-| `declared_state` | str | `{"staged","sealed"}`（权威=`seal_attempts` 行） | 与权威行矛盾 → `STAGING_STATE_INVALID` |
+| `declared_state` | str | `{"staged","sealed"}`（权威=`seal_attempts` 行） | 方向性矛盾（CR-D1R-01）：仅 declared=`sealed` 而权威行=STAGING → `STAGING_STATE_INVALID`（过度声明，触发 (b) 唯一形态）；declared=`staged`+权威行 SEALED = 幂等重试正常可达态（§4.4 ③）；缺行 → `STAGING_NOT_FOUND`（§4.4 ②，唯一归属）；全函数判定见 §4.4 |
 | `created_at` | str | UTC RFC3339 | 仅诊断 |
 
 - **重开与重试（R66-06③）**：同 root、同可信租户重开（含跨实例/跨进程新 `open`）后**可重试原
@@ -477,8 +499,8 @@ class LocalArtifactStore:
 | `UNSUPPORTED_REDACTED_FORM` | redacted_value 非 str（FingerprintRecord/bytes/JSON）或 classification/retention 不在接受面（S2a/S2c） | 零内容落盘、不取回原文、不声称已保存全文 |
 | `UNSUPPORTED_LINEAGE` | 非空 lineage/supersedes 进入 stage 或 envelope helper 构造器 | 零写入 |
 | `UNSUPPORTED_SCHEMA` | get 的 schema name/version 非 `lima.sanitized-log`/`4.0`（G2） | 只读失败 |
-| `STAGING_NOT_FOUND` | handle 的 staging 身份在权威 `seal_attempts` 中不存在**且无可幂等返回的已 seal 身份**（R66-06③改写：「非本 store」不再是触发） | 只读失败 |
-| `STAGING_STATE_INVALID` | (a) handle 绑定 root/tenant 与当前 store 不符（外来 handle）；(b) handle 声明状态与权威 `seal_attempts` 行矛盾（**「已 abort」触发已删除——本片无公共 abort 入口、close 不批量 abort，该状态不可达，R66-06④裁定**） | 只读失败 |
+| `STAGING_NOT_FOUND` | handle 的 staging 身份在权威 `seal_attempts` 中不存在（**唯一归属**：无行即无可幂等返回的已 seal 身份，declared_state 不影响归属，缺行不落 (b)——CR-D1R-01②；R66-06③改写：「非本 store」不再是触发） | 只读失败 |
+| `STAGING_STATE_INVALID` | (a) handle 绑定 root/tenant 与当前 store 不符（外来 handle）；(b) **方向性矛盾**——handle 声明 `sealed` 而权威 `seal_attempts` 行为 STAGING（过度声明；触发 (b) 的唯一形态，CR-D1R-01④——declared=`staged`+权威行 SEALED 为幂等重试正常可达态、缺行归 `STAGING_NOT_FOUND`）（**「已 abort」触发已删除——本片无公共 abort 入口、close 不批量 abort，该状态不可达，R66-06④裁定**） | 只读失败 |
 | `SEAL_DIGEST_MISMATCH` | expected_content_digest ≠ 实测（S4） | 不发布、不提交 |
 | `ARTIFACT_NOT_FOUND` | G3：租户不符、未知 artifact_id、未封存、**或六字段任一与权威记录不一致（含合法格式但错误的 repository_snapshot_digest/content_digest，R66-06②）** | 只读失败；绝不泄露他租户对象存在性 |
 | `BLOB_MISSING` | G5 实物缺失（metadata-only）；**或 seal/幂等重试路径核验发现实物缺失（P1，R66-02 扩展触发面）** | metadata 不丢；不返回内容；seal 路径零新增 SEALED |
@@ -489,12 +511,15 @@ class LocalArtifactStore:
 | `CAPACITY_EXCEEDED` | §7.1 统一限额表任一容量/对象/记录/残留类限额超限 | 拒绝新写；不自动清理活对象；不 fallback |
 | `CONCURRENCY_LIMIT_EXCEEDED` | 并发 seal 超 max_concurrent_seals；**或临界区/锁有限等待超时（R66-05；含 DELETE 模式写事务期间读者 busy_timeout 超时）** | 拒绝/稳定失败（零提交） |
 | `STORE_CONFIG_CONFLICT` | **新增（唯一新码，R66-05）**：open 发现同 root 已绑定的 limits 指纹与本次 open 传入（或默认）limits 不一致 | 拒绝 open，零写入（不允许后开实例以更宽配置绕过 root 上限） |
-| `PATH_POLICY_VIOLATION` | 解析路径越出私有 root、symlink/junction 命中发布/读取路径；**或 P1 ②/③ 核验链接/reparse 异常（R66-02）** | 拒绝该 IO；零越界访问 |
+| `PATH_POLICY_VIOLATION` | 解析路径越出私有 root、symlink/junction 命中发布/读取路径；**或 P1 ②/③ 核验链接/reparse 异常、非常规文件（目录/FIFO 等）（R66-02；SF-D1R-02）** | 拒绝该 IO；零越界访问 |
 | `IO_ERROR` | 磁盘满/权限拒绝/IO 异常（bounded：仅异常类型与 errno 级元数据） | 稳定失败；不回显日志原文 |
 | `INTERNAL_STORAGE_ERROR` | 不可预期异常兜底（bounded：仅异常类型；含契约层 encode 资源上限映射——正常不可达） | 稳定失败；不回显内容 |
 
-契约层 `ContractError`（如 decode 时的 DIGEST_MISMATCH）在 get 路径被映射为上表对应存储错误
-（G4/G5 阶段 → `BLOB_CORRUPT`/`METADATA_CORRUPT`），不把原始异常文本透传给业务。所有错误信息
+契约层 `ContractError` 在 get 路径被映射为上表对应存储错误，不把原始异常文本透传给业务：G4/G5
+阶段的契约 digest 失败（如 decode 时的 DIGEST_MISMATCH）→ `BLOB_CORRUPT`/`METADATA_CORRUPT`；
+**get 入口（G1/G2 边界）的契约层 `SCHEMA_UNKNOWN_MAJOR` 及构造期同族 schema 版本拒绝 →
+`UNSUPPORTED_SCHEMA`（SF-D1R-03：版本不在接受面的语义；其余构造期形状类契约拒绝仍归 G1
+`INVALID_ARGUMENT`）**。所有错误信息
 只含：code、field 级定位、`{"limit","actual","privacy_code","exception_type"}` 式 bounded 元数据
 ——**无日志正文、无 tenant_key/token/Secret、无主机绝对路径**（条款 11）。
 
@@ -521,7 +546,7 @@ tenant 与调用者传入字符串均不作为身份认证依据（§4.5）。
 | 8 | `max_concurrent_seals` 并发 seal 数 | root 跨进程 | 8 | [1, 64] | 64 | 临界区并发持有者 | 获取临界区时检查；等待超时=稳定失败零提交；崩溃=OS 文件锁随进程终止自动释放（不悬挂） | `CONCURRENCY_LIMIT_EXCEEDED` |
 | 9 | `max_metadata_record_bytes` metadata 单条记录上界（**新增**） | 进程内不变量 | 8 KiB | 固定 | 8 KiB | 单行+envelope_wire 合计 | 构造时校验；超限拒绝封存（字段全有界，正常不可达） | `INTERNAL_STORAGE_ERROR` |
 | 10 | `max_metadata_records` metadata 记录总数上界（**新增**：artifacts+seal_attempts+诊断行） | root 跨进程 | 100,000 | [10,000, 1,000,000] | 1,000,000 | metadata 行 | 临界区内检查；幂等重试不新增行；失败/崩溃残留行计额 | `CAPACITY_EXCEEDED` |
-| 11 | `max_quarantine_items` 诊断与隔离残留计数（**新增**） | root 跨进程 | 1,000 | [1, 100,000] | 100,000 | quarantine 条目+诊断残留记录 | 残留恒计额（无删除授权仍占额）；inspect 隔离移动满额时拒绝执行、诊断报告照常输出 | `CAPACITY_EXCEEDED` |
+| 11 | `max_quarantine_items` 诊断与隔离残留计数（**新增**） | root 跨进程 | 1,000 | [1, 100,000] | 100,000 | quarantine 目录下的文件系统条目 | 残留恒计额（无删除授权仍占额）；inspect 隔离移动满额时拒绝执行、诊断报告照常输出 | `CAPACITY_EXCEEDED` |
 | 12 | `max_auxiliary_bytes` 辅助文件预算（**新增**：DELETE journal 峰值+锁文件） | root 跨进程 | 4 MiB | [64 KiB, 64 MiB] | 64 MiB | journal+锁文件字节 | journal 峰值≤单事务脏页上界（本片事务=有界小记录，行 9）；hot journal 残留计额至下次打开回滚；锁文件恒 0 字节；计入行 5 | `CAPACITY_EXCEEDED` |
 | 13 | `max_read_bytes_per_get` 单次 get 读放大 | 进程内 | = `max_sealed_bytes`+`max_envelope_bytes` | 随前两者 | 同左 | 单次 get 读取字节 | 读取硬限：实际 size 超界先由 G5 size 校验拒绝，**永不读入超界字节** | `BLOB_SIZE_MISMATCH`（size 前置拒绝） |
 
@@ -529,6 +554,17 @@ tenant 与调用者传入字符串均不作为身份认证依据（§4.5）。
 dedup 与空日志照样消耗逻辑额度）；行 9/10（metadata 每条/总数上界是 R66-05 要求的运维占用有界）；
 行 11（隔离/诊断残留占额）；行 12（journal/锁文件预算）。原适用限额默认值全部保留（行 1–5、8、
 13 与 v1.0 一致）。
+
+**计账单值细则（SF-D1R-04，Coordinator 裁定；三句单值）**：
+(i) S2 诊断行的键 = 本次失败 stage 调用的系统生成 `staging_id`（与 S3 同生成器同格式
+`"stg-"+uuid4hex(32)`）——该行**仅为诊断行**：不创建 `seal_attempts` 行、不占行 7 live-staging
+名额，唯一计入行 10；行 2「1 条/attempt」= 每次失败调用至多一条，重试 stage 另 mint 新 id
+（新 stage 不是免费重试，7.1b）。
+(ii) inspect 隔离移动后，行 4 物理对象计数**不释放**（对象仍在 root 下；释放仅存在于有删除授权
+的未来片）；行 5 字节不变，行 11 +1。
+(iii) 计数不相交规则——同一物理计入在同一维度只落一个限额行：诊断记录行唯一计入行 10；行 11
+计数单位为 quarantine 目录下的文件系统条目（不含诊断行）；跨维度（如行 4 对象数与行 5 字节、
+行 6 逻辑身份与行 4 物理对象）按各自单位独立计，不属双计。
 
 **计数语义（7.1b，冻结）**：唯一物理 blob（行 4，内容寻址去重后）/ 逻辑 Artifact（行 6，身份键计）/
 staging-seal attempt（行 7/10）/ 诊断隔离残留（行 11）**分开计数**；同内容 dedup 与 0 字节日志
@@ -625,6 +661,9 @@ report_json、不回退 inline。既有 privacy/codec 限制零扩大；**不改
   updated_at, blob_id, content_digest)`；`artifact_store_meta(key PK, value)` 载荷至少含
   `root_id`（64-hex，handle 外来判定）、`tenant_storage_key_map_version=1`、`limits_fingerprint`
   （§7.1c）、限额账本行（计数）。所有查询以 `tenant_id = <store 绑定租户>` 为谓词（G3）。
+  **建表列禁止 `COLLATE NOCASE` 及任何大小写归一排序规则——一切字符串键（tenant_id/
+  artifact_id/staging_id/blob_id 等）按 BINARY 精确字节比较（SF-D1R-04 附注：逻辑租户精确
+  比较在 SQL 层可达的实现纪律前提；SQLite 默认即为 BINARY）。**
 - `envelope_wire` 存 `encode_envelope` 的 canonical JSON 文本（envelope 本身无日志正文；每条
   记录上界=行 9）。
 
@@ -652,8 +691,8 @@ P&V 默认预算 35 的理由：D1R 六项修正各自新增行为面（输出�
 |---|---|---|---|
 | 隐私 | 真实 storage policy 净化；磁盘/DB/错误信息中无 raw Secret（含 SQLite 全文扫描）；缺 key/policy、净化失败、UNSUPPORTED_REDACTED_FORM 时零内容写入（目录快照对比）；**错 tenant 注入 → SanitizedPayload.tenant_id 不符 → S2b 拒绝零落盘（R66-01）；manifest 携错误 policy_digest → S2c 拒绝零落盘** | 6 | FingerprintRecord 形态拒绝且零落盘；绑定/策略反例经真实净化输出 |
 | 真实闭环 | 同进程 stage→seal（回执）→get（读结果）；**新进程**重开 root/SQLite（同 root+同可信租户+policy）读回同字节；独立 digest 复算；envelope/blob_ref/reference 三方绑定校验；**回执无 content 字段 / 读结果 content=已验证字节（含合法空日志 b"" 唯一语义）** | 5 | 字节级全等断言（非仅 digest 相等） |
-| 权限与输入 | 错租户（== NOT_FOUND 不可区分）；**六字段 ref 逐项校验（合法格式但错误 repository_snapshot_digest/content_digest → ARTIFACT_NOT_FOUND，R66-06②）**；错 type/version；非空 lineage/supersedes（stage 与 envelope helper 双入口）；未封送 id；缺失/损坏 blob 拒绝；**外来 root/tenant handle 拒绝（STAGING_STATE_INVALID）**；拒绝不泄露他租户 | 7 | 伪造 ref / 篡改 wire digest / 合法格式错误 digest |
-| 不可变与重试 | 同 handle 重复 seal 幂等（**含跨进程重开 handle、P2 后崩溃重试**）；**幂等成功仍核验实物：SEALED 后实物损坏 → 重复 seal 稳定失败非假幂等（R66-02）**；**同长度坏旧 blob + 合法新 staging → 复用前核验拒绝（零覆盖、零新增 SEALED、原字节不动）**；**竞态分支核验（目标在核验与发布间出现）**；并发 seal（线程/进程）单胜者且不覆盖已存在有效对象；同字节不同 staging → 不同 artifact_id 同 blob；METADATA_CONFLICT 不覆盖 | 7 | 并发窗口内无双重提交；坏复用零副作用 |
+| 权限与输入 | 错租户（== NOT_FOUND 不可区分）；**六字段 ref 逐项校验（合法格式但错误 repository_snapshot_digest/content_digest → ARTIFACT_NOT_FOUND，R66-06②）**；错 type/version；非空 lineage/supersedes（stage 与 envelope helper 双入口）；未封送 id；缺失/损坏 blob 拒绝；**外来 root/tenant handle 拒绝（STAGING_STATE_INVALID）**；**handle 状态判定反例：declared=sealed + 权威行 STAGING → STAGING_STATE_INVALID（CR-D1R-01④）**；拒绝不泄露他租户 | 7 | 伪造 ref / 篡改 wire digest / 合法格式错误 digest |
+| 不可变与重试 | 同 handle 重复 seal 幂等（**含跨进程重开 handle、P2 后崩溃重试**）；**declared=staged + 权威行 SEALED 重试 → 同一回执（P1 核验通过后，CR-D1R-01③）**；**幂等成功仍核验实物：SEALED 后实物损坏 → 重复 seal 稳定失败非假幂等（R66-02）**；**同长度坏旧 blob + 合法新 staging → 复用前核验拒绝（零覆盖、零新增 SEALED、原字节不动）**；**竞态分支核验（目标在核验与发布间出现）**；并发 seal（线程/进程）单胜者且不覆盖已存在有效对象；同字节不同 staging → 不同 artifact_id 同 blob；METADATA_CONFLICT 不覆盖 | 7 | 并发窗口内无双重提交；坏复用零副作用 |
 | 故障与恢复 | 真子进程 kill 于 S3 后/P1 前/P1 后/P2 前/P2 后五点（两平台）；重启诊断分类正确；**P2 中 kill → DELETE hot journal 回滚两态**；部分/缺失内容不作为成功返回；**close 不破坏重试（close 后重开+原 handle 幂等）** | 6 | 无假 SEALED 断言 |
 | 资源与路径 | 0-byte、Unicode 字节边界（单 emoji/多字节）、输入超限、**净化输出超限（膨胀反例 262,119 B 输入→365,378 B 输出 → SEALED_BUDGET_EXCEEDED、零内容写入、staging 目录为空、稳定失败无降级，R66-04）**、**更严格 policy 交集收紧（注入更严 policy 触发失败）**、**限额计额（重复同内容/空内容仍消耗逻辑额度；失败/崩溃残留计额；两真实进程争最后一个额度不超限；同 root limits 不一致 → STORE_CONFIG_CONFLICT；辅助文件预算；inspect 扫描有界）**、**两平台租户键（Windows `Tenant-A`/`tenant-a`、`tenant-end`/`tenant-end.` 独立物理目录互不混叠；合法标识含冒号/保留名租户正常封存；Linux 不同逻辑租户同内容独立存放；逻辑层 SQL/Reference/ACL 仍区分大小写与尾点，R66-03）**、路径穿越/symlink/junction/reparse 拒绝、满盘/权限（模拟注入） | 9 | 空对象不绕对象数；失败不变空成功 |
 | 持久化边界 | SQLite 无日志正文/凭据（全库扫描）；metadata/ref 有界（行 9）；store 不可用无 inline/旧 report_json 降级；contracts/privacy 既有测试回归 + #60 面零触碰 | 4 | 契约兼容（import 面/wire 面） |
