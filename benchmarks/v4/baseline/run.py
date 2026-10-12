@@ -57,11 +57,15 @@ _TAXONOMY_OUTCOMES: dict[str, str] = {
 # dataset name -> (role, fingerprint) double-pinned bindings.  The registry
 # fingerprint pin catches self-consistent recomputations where a spec and a
 # manifest are mutated together and therefore agree with each other.
+# Calibration binding refreshed with PR #266 review round 5: the analyzer
+# components (repository_scanner.py) changed, so the calibration dataset's
+# calibration_analyzer_sha256 -- and with it the frozen file bytes and this
+# transcribed fingerprint -- moved in the same change (#49 precedent).
 FROZEN_DATASET_BINDINGS = types.MappingProxyType(
     {
         "lima-popular-python-calibration-v1": (
             "calibration",
-            "049d69b25731e51f75a800c5c406ab2d8faef1257d7dacfb275f9734b407b986",
+            "9f442c3ffad7d5115a6098f125a9ed5dcc4616aeda3da444b3f4b2d10dfff6e7",
         ),
         "lima-popular-python-external-holdout-v2": (
             "external-holdout",

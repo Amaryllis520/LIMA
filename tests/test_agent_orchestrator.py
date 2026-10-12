@@ -1029,6 +1029,85 @@ class DiscoveryFallbackTests(unittest.TestCase):
         source2 = "#define loop loop\nint loop(void) {\n    return 0;\n}\n"
         self.assertEqual(2, _resolve_discovery_line(source2, "loop", 0))
 
+    def test_deadline_before_scout_marks_lead_units_unreviewed(self):
+        # Review round 5 (P1): when the last Discovery reply lands after
+        # the deadline, the Scout never runs; the units hosting the leads
+        # must surface as unreviewed so a pair validator reads the review
+        # as inconclusive instead of a clean pass.
+        import json as _json
+        from unittest.mock import patch
+
+        from lima import agent_orchestrator as orchestration
+
+        unit = "src/a.c"
+        root = tempfile.mkdtemp(suffix="-scout-deadline")
+        self.addCleanup(lambda: _rmtree(root))
+        workspace = _write_cxx_repo(root, name=unit)
+        ticks = [0.0]
+
+        def send_then_expire(*args, **kwargs):
+            ticks[0] = 2.0
+            return _json.dumps(
+                {"leads": [{"path": unit, "line": 1, "summary": "review a"}]}
+            )
+
+        with patch.object(
+            orchestration, "send_semantic_request",
+            side_effect=send_then_expire,
+        ), patch.object(
+            orchestration.time, "monotonic",
+            side_effect=lambda: ticks[0],
+        ):
+            outcome = orchestration.run_platform_review(
+                None, workspace,
+                repository_key="scout-deadline",
+                snapshot_hash=workspace.inventory().fingerprint(),
+                translation_units=(unit,),
+                mode="required",
+                llm_config={"provider": "custom", "model": "m"},
+                deadline_seconds=1,
+            )
+        self.assertEqual(0, outcome.stats.scout_calls)
+        self.assertIn(unit, outcome.unreviewed_units)
+
+    def test_discovery_result_cap_marks_dropped_lead_units_unreviewed(self):
+        # Review round 5 (P2): leads dropped by the global result cap were
+        # never reviewed; their units join the unreviewed set so a
+        # zero-positive outcome cannot be read as full coverage.
+        import json as _json
+        from unittest.mock import patch
+
+        from lima import agent_orchestrator as orchestration
+        from lima.cxx_agent_tools import CxxAgentBudget
+
+        source = "\n".join(
+            f"int f{index}(void) {{ return {index}; }}"
+            for index in range(3300)
+        )
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return source
+
+        windows = orchestration._split_windows(source)
+        replies = [
+            _json.dumps({"leads": [
+                {"path": "parser.c", "line": 1 + index, "summary": "s"}
+                for index in range(8)
+            ]})
+            for _ in windows
+        ]
+        with patch.object(
+            orchestration, "send_semantic_request", side_effect=replies,
+        ):
+            leads, notes, unreviewed = orchestration._discover_leads(
+                {"provider": "custom", "model": "m"}, _FlatWorkspace(),
+                ("parser.c",), 60, None, CxxAgentBudget(), "required",
+            )
+        self.assertGreater(len(windows) * 8, len(leads))
+        self.assertIn("llm-discovery-leads-capped", notes)
+        self.assertIn("parser.c", unreviewed)
+
     def test_discovery_abstain_keeps_no_leads_outcome(self):
         transport = ScriptedPlatformTransport(
             discovery=[discovery_json([])],
@@ -2182,6 +2261,27 @@ class ScannerSingleChainTests(unittest.TestCase):
             ),
         )
         self.assertNotIn("cxx_agent", disabled)
+
+    def test_platform_collaboration_reports_unreviewed_scope(self):
+        """Review round 5 (P1): unaudited scope surfaces in the payload."""
+        from lima.agent_orchestrator import PlatformReviewOutcome
+        from lima.agent_orchestrator import PlatformReviewStats
+
+        outcome = PlatformReviewOutcome(
+            findings=(), targets=(),
+            stats=PlatformReviewStats(0, 0, 0, 0, 0, 0, 1),
+            diagnostics=("llm-discovery-window-transport-failed: down",),
+            leads_considered=0,
+            translation_units=("src/example.c",),
+            unreviewed_units=("src/example.c",),
+        )
+        scanner = RepositoryScanner(sast_mode="off", dataflow_enabled=False)
+        payload = scanner._platform_collaboration(
+            "required", "review-incomplete", outcome,
+            unreviewed_units=("src/example.c",),
+        )
+        self.assertEqual("review-incomplete", payload["status"])
+        self.assertEqual(["src/example.c"], payload["unreviewed_units"])
 
     # --- #244（方案 §3.4）：目标审计详情投影 -------------------------------
 

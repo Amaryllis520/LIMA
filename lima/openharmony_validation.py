@@ -291,7 +291,12 @@ def _validate_compdb_arguments(
             expect_value = True
             continue
         if text.startswith(("-I", "-isystem")):
-            _validate_include(path, unit, text.split(None, 1)[0][2:] or "/")
+            # Review round 5 (P2): strip the prefix that actually matched
+            # -- "-isystem" is six characters longer than "-I", and a
+            # fixed [2:] slice rejected legal joined spellings
+            # ("-isystemsrc" -> "systemsrc").
+            prefix = "-isystem" if text.startswith("-isystem") else "-I"
+            _validate_include(path, unit, text[len(prefix):] or "/")
         # -D and friends need no containment check.
 
 
@@ -815,10 +820,26 @@ def run_openharmony_case(
 
     final = matching[0]
     driver = final.poc_driver_code
-    observations, elapsed = _replay(
-        vulnerable_workbench, case.vulnerable.repository_key,
-        vulnerable_record.snapshot_hash, final.path, driver,
-    )
+    try:
+        observations, elapsed = _replay(
+            vulnerable_workbench, case.vulnerable.repository_key,
+            vulnerable_record.snapshot_hash, final.path, driver,
+        )
+    except AgentBudgetExceeded as exc:
+        # Review round 5 (P2): a replay-time budget exhaustion must return
+        # an inconclusive result (budget facts and diagnostics preserved)
+        # rather than escape -- the CLI then still writes the evidence
+        # bundle.
+        vulnerable_record = replace(
+            vulnerable_record, status=ValidationStatus.INCONCLUSIVE,
+            diagnostics=(*vulnerable_record.diagnostics,
+                         f"replay-budget-exhausted: {exc}"),
+        )
+        return _finish(
+            vulnerable_record,
+            _empty_revision(case.fixed, ValidationStatus.INCONCLUSIVE,
+                            ("fixed-not-run",)),
+        )
     hits = 0
     replay_problem = None
     for observation in observations:
@@ -869,10 +890,20 @@ def run_openharmony_case(
         )
         return _finish(vulnerable_record, fixed_record)
 
-    observations, elapsed = _replay(
-        fixed_workbench, case.fixed.repository_key,
-        fixed_record.snapshot_hash, final.path, driver,
-    )
+    try:
+        observations, elapsed = _replay(
+            fixed_workbench, case.fixed.repository_key,
+            fixed_record.snapshot_hash, final.path, driver,
+        )
+    except AgentBudgetExceeded as exc:
+        # Review round 5 (P2): same discipline on the fixed-side replay.
+        fixed_record = replace(
+            fixed_record, status=ValidationStatus.INCONCLUSIVE,
+            replay_observations=(), replay_elapsed_seconds=(),
+            diagnostics=(*fixed_record.diagnostics,
+                         f"replay-budget-exhausted: {exc}"),
+        )
+        return _finish(vulnerable_record, fixed_record)
     fixed_record = replace(
         fixed_record,
         replay_observations=observations, replay_elapsed_seconds=elapsed,

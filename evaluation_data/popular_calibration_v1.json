@@ -6,15 +6,22 @@
   "baseline_analyzer_version": "1.4.0",
   "baseline_analyzer_sha256": "e9000d218084bc0738d9ecef8ec7a8e4c145931042a8ac9cb6f458eec555869b",
   "calibration_analyzer_version": "1.5.0",
-  "calibration_analyzer_sha256": "717697c044ffe7d6a39021156e2572830d9c4ac954b9a08c26bc5b34b964d0a3",
+  "calibration_analyzer_sha256": "dcafbd9fdbe834261ddf0b0714ba2d05f32c08fece12e6d975c29897e3eb8682",
   "source_holdout_manifest_sha256": "072b3a2d4cc1227fa7d2136897ef87f7806d5776b3fbe0cdabd1aeb702b4d846",
   "selection_policy": {
     "minimum_stars": 1000,
     "minimum_watchers": 100,
     "threshold_operator": "or",
-    "case_count_range": [5, 10],
+    "case_count_range": [
+      5,
+      10
+    ],
     "repository_disjoint": true,
-    "represented_cwes": ["CWE-22", "CWE-78", "CWE-89"],
+    "represented_cwes": [
+      "CWE-22",
+      "CWE-78",
+      "CWE-89"
+    ],
     "excluded_repositories": [
       "aio-libs/aiohttp",
       "django/django",

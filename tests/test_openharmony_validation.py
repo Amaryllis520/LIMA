@@ -469,6 +469,36 @@ class CheckoutValidationTests(unittest.TestCase):
              "_overlay/log.h"},
         )
 
+    def test_joined_isystem_spelling_is_accepted(self):
+        # Review round 5 (P2): "-isystemsrc" is the legal joined spelling
+        # of "-isystem src"; the preflight must strip the prefix that
+        # actually matched instead of a fixed two-character slice.
+        fixture = CheckoutFixture()
+
+        def compdb(flags):
+            return [{
+                "directory": ".", "file": "src/parser.c",
+                "arguments": [
+                    "clang-14", "-c", *flags,
+                    "src/parser.c", "-o", "build/parser.o",
+                ],
+            }]
+
+        case = fixture.case(fixture.stage_case_files(
+            compdb=compdb(["-isystem", "src"]),
+        ))
+        self.validate(
+            case, self.policy(str(fixture.import_root)),
+            self.limits(max_files=500, max_file_bytes=65536,
+                        max_total_bytes=1 << 20),
+        )
+        fixture.stage_case_files(compdb=compdb(["-isystemsrc"]))
+        self.validate(
+            case, self.policy(str(fixture.import_root)),
+            self.limits(max_files=500, max_file_bytes=65536,
+                        max_total_bytes=1 << 20),
+        )
+
     def test_wrong_head_and_dirty_tree_rejected(self):
         fixture = CheckoutFixture()
         entry = fixture.stage_case_files()
@@ -983,10 +1013,27 @@ class PairedRunTests(unittest.TestCase):
         self.assertEqual(
             ValidationStatus.INCONCLUSIVE, result.fixed.status,
         )
+
+    def test_replay_budget_exhaustion_returns_inconclusive(self):
+        # Review round 5 (P2): a replay-time budget exhaustion must return
+        # an inconclusive pair result (CLI can still write the bundle)
+        # instead of escaping and discarding the whole validation.
+        from lima.cxx_agent_tools import AgentBudgetExceeded
+
+        target_hit = _observation(
+            ok=False, stage="run", error_type="'heap-use-after-free'",
+            faulting_file="'src/parser.c'", exit_code=1,
+        )
+        result, _ = self._run(
+            vulnerable_outcome=_outcome([_finding()]),
+            vulnerable_replay=[target_hit, AgentBudgetExceeded("budget")],
+        )
+        self.assertEqual("inconclusive", result.status.value)
         self.assertTrue(any(
-            code.startswith("required-review-unreviewed-units")
-            for code in result.reason_codes
-        ), result.reason_codes)
+            code.startswith("replay-budget-exhausted")
+            for code in result.vulnerable.diagnostics
+        ), result.vulnerable.diagnostics)
+        self.assertIn("fixed-not-run", result.fixed.diagnostics)
 
     def test_unrelated_fixed_findings_are_recorded_not_decisive(self):
         target_hit = _observation(

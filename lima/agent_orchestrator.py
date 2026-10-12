@@ -1170,10 +1170,16 @@ def _discover_leads(
                 f"llm-discovery-window-transport-failed: {exc}"[:256]
             )
     leads: list[ScoutLead] = []
+    capped = False
+    capped_units: set[str] = set()
     for path, approximated, summary, function in quadruples:
         if len(leads) >= 2 * _MAX_DISCOVERY_LEADS:
-            notes.append("llm-discovery-leads-capped")
-            break
+            # Review round 5 (P2): leads dropped by the global cap were
+            # never reviewed -- their units join the unreviewed set so a
+            # zero-positive result cannot be read as full coverage.
+            capped = True
+            capped_units.add(path)
+            continue
         line = _resolve_discovery_line(
             sources.get(path, ""), function, approximated,
         )
@@ -1193,6 +1199,8 @@ def _discover_leads(
                 sources.get(path, ""), line, function,
             ),
         ))
+    if capped:
+        notes.append("llm-discovery-leads-capped")
     return tuple(leads), (
         *notes,
         f"leads-from-llm-discovery: {len(leads)} leads, {calls[0]} calls "
@@ -1200,7 +1208,9 @@ def _discover_leads(
     ), frozenset(
         unit for unit, count in expected.items()
         if completed.get(unit, 0) < count
-    ) | set(skipped)
+    ) | set(skipped) | (
+        capped_units if capped else set()
+    )
 
 
 def _match_candidate(
@@ -1937,9 +1947,16 @@ def run_platform_review(
 
     scout_timeout = _bounded_step_timeout(timeout, deadline)
     if scout_timeout is None:
+        # Review round 5 (P1): leads exist but the Scout never ran, so
+        # every unit hosting a lead carries unreviewed evidence; a clean
+        # pass reading here would launder an expired review into a
+        # verified one (the pair validator reads unreviewed_units).
         return _empty_outcome(
             ("deadline-exceeded before the scout review",), units,
-            unreviewed_units=discovery_unreviewed,
+            unreviewed_units=tuple(sorted(
+                set(discovery_unreviewed)
+                | {lead.path for lead in given_leads}
+            )),
         )
     try:
         report: ScoutReport = review_leads(
@@ -2185,6 +2202,14 @@ def run_platform_review(
         bundle.coverage_gaps if bundle is not None else ()
     ):
         diagnostics.append(f"coverage gap: {gap}")
+    # Review round 5 (P1): targets the loop never attempted (deadline or
+    # cancellation) leave their units partially audited -- the outcome
+    # must not read as a completed review of those units.
+    stage_unreviewed = {
+        item.path for item in targets_out
+        if item.state == "abstain"
+        and item.rejected_reason in ("deadline-exceeded", "cancelled")
+    }
     return PlatformReviewOutcome(
         findings=findings,
         targets=tuple(targets_out),
@@ -2200,5 +2225,7 @@ def run_platform_review(
         diagnostics=tuple(diagnostics),
         leads_considered=len(given_leads),
         translation_units=units,
-        unreviewed_units=discovery_unreviewed,
+        unreviewed_units=tuple(sorted(
+            set(discovery_unreviewed) | stage_unreviewed
+        )),
     )
