@@ -383,6 +383,25 @@ class ComponentGraph:
     provenance_anchor_ids: tuple[str, ...] = (COMPONENT_GRAPH_PROVENANCE_ANCHOR,)
 
 
+#: Budget legal domains (single source of truth): construction-time
+#: validation (MonorepoBudgets.__post_init__) and the public validator's V8
+#: budget cross-check both read this table; the schema hard caps are the
+#: domain upper bounds (Packet v5.1 sections 5.4.3/5.4.8 V8). Defaults are
+#: NOT hard caps -- any in-domain value is legal.
+_BUDGET_DOMAINS: Final[Mapping[str, tuple[int, int]]] = {
+    "max_components": (1, 64),
+    "max_edges": (1, 16_384),
+    "max_edge_evidence": (1, 1_024),
+    "max_unassigned_files": (1, 4_096),
+    "max_total_model_calls": (1, 512),
+    "aggregate_max_prompt_tokens": (1, 1_000_000),
+    "aggregate_max_output_tokens": (1, 1_000_000),
+    "aggregate_max_total_tokens": (1, 1_000_000),
+    "max_metadata_manifests": (1, 1_024),
+    "max_metadata_total_bytes": (1, 10**12),
+}
+
+
 @dataclass(frozen=True)
 class MonorepoBudgets:
     """Aggregate budgets with default / legal-domain / schema-cap separation.
@@ -404,19 +423,7 @@ class MonorepoBudgets:
     max_metadata_total_bytes: int = 1_048_576
 
     def __post_init__(self) -> None:
-        domains: dict[str, tuple[int, int]] = {
-            "max_components": (1, 64),
-            "max_edges": (1, 16_384),
-            "max_edge_evidence": (1, 1_024),
-            "max_unassigned_files": (1, 4_096),
-            "max_total_model_calls": (1, 512),
-            "aggregate_max_prompt_tokens": (1, 1_000_000),
-            "aggregate_max_output_tokens": (1, 1_000_000),
-            "aggregate_max_total_tokens": (1, 1_000_000),
-            "max_metadata_manifests": (1, 1_024),
-            "max_metadata_total_bytes": (1, 10**12),
-        }
-        for name, (low, high) in domains.items():
+        for name, (low, high) in _BUDGET_DOMAINS.items():
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
                 raise ValueError(f"{name} must be an integer in [{low}, {high}]")
@@ -719,6 +726,7 @@ def _discover(
     workspace: RepositoryWorkspace,
     budgets: MonorepoBudgets,
     manifest_policy: str,
+    meter: _ReadPhaseMeter | None = None,
 ) -> _DiscoveryOutcome:
     main = workspace.inventory()
     admitted = {item.path for item in main.files}
@@ -734,22 +742,40 @@ def _discover(
     channel_paths: set[str] = set()
     channel_attempts = 0
     if manifest_policy == MANIFEST_POLICY_METADATA_CHANNEL:
-        channel_texts, channel_paths, channel_skipped, channel_attempts = (
-            _run_channel(workspace, budgets)
-        )
+        if meter is not None:
+            meter.phase = "channel"
+        try:
+            channel_texts, channel_paths, channel_skipped, channel_attempts = (
+                _run_channel(workspace, budgets)
+            )
+        finally:
+            if meter is not None:
+                meter.phase = ""
 
     manifest_texts: dict[str, str] = dict(channel_texts)
     for path in channel_paths:
         if path not in manifest_texts:
             manifest_texts[path] = ""
-    for path in sorted(s1_manifests):
-        if path in manifest_texts:
-            continue
-        try:
-            manifest_texts[path] = workspace.read_text(path)
-        except (OSError, ValueError, UnicodeDecodeError):
-            manifest_texts[path] = ""
-            channel_attempts += 1
+    # S1-manifest read-back: reads the channel did not already perform.
+    # Metering bucket (IR-03 opening-summary choice, constant within one
+    # build): S8 metadata_channel_read_attempts -- the read-back is the
+    # channel's complement (each discovered manifest is read exactly once by
+    # channel-or-read-back), so the stage keeps its Packet meaning while S3
+    # stays exactly the per-component Profile manifest reads.
+    if meter is not None:
+        meter.phase = "channel"
+    try:
+        for path in sorted(s1_manifests):
+            if path in manifest_texts:
+                continue
+            try:
+                manifest_texts[path] = workspace.read_text(path)
+            except (OSError, ValueError, UnicodeDecodeError):
+                manifest_texts[path] = ""
+                channel_attempts += 1
+    finally:
+        if meter is not None:
+            meter.phase = ""
 
     collaboration = 0
     rejected_anchors = 0
@@ -1185,7 +1211,6 @@ def _scan_imports(
     list[tuple[tuple[str, str, str, str], _EdgeDraft]],
     list[tuple[tuple[str, str], int]],
     dict[str, dict[str, int]],
-    int,
 ]:
     """Graph-level AST scan over every owned ``.py`` (repo-level coordinates)."""
 
@@ -1201,7 +1226,6 @@ def _scan_imports(
         }
         for component in components
     }
-    ast_reads = 0
     for component in sorted(components, key=lambda item: item.component_id):
         component_id = component.component_id
         declared: set[str] = set()
@@ -1217,7 +1241,6 @@ def _scan_imports(
                     summaries[component_id]["manifest_parse_failure_count"] += 1
         own_names = name_table.get(component_id, set())
         for path in sorted(owned_py.get(component.root_dir, [])):
-            ast_reads += 1
             try:
                 text = workspace.read_text(path)
             except (OSError, ValueError, UnicodeDecodeError):
@@ -1284,20 +1307,96 @@ def _scan_imports(
                         )
     edge_items = [(key, edges[key]) for key in sorted(edges)]
     unknown_items = [(key, unknowns[key]) for key in sorted(unknowns)]
-    return edge_items, unknown_items, summaries, ast_reads
+    return edge_items, unknown_items, summaries
 
 
 # ---------------------------------------------------------------------------
-# Per-component restricted view with real IO metering (CL-04)
+# Real-read metering (CL-04 / IR-03): main-workspace phase meter and the
+# per-component metered view
 # ---------------------------------------------------------------------------
+
+
+class _ReadPhaseMeter:
+    """Build-local real-read meter for the caller's main workspace (IR-03).
+
+    Fires at the workspace's actual read points: inventory reads always
+    attribute to S0; text reads attribute to the current phase (S8 channel
+    or read-back, S7 graph AST). The meter is created per build, attached
+    for the discovery + AST phases only, and detached with the previously
+    saved probes restored (no residue on the caller's instance, no state
+    shared between adjacent or nested builds).
+    """
+
+    __slots__ = (
+        "phase",
+        "s0_attempts",
+        "s0_bytes",
+        "s7_attempts",
+        "s7_bytes",
+        "s8_attempts",
+        "s8_bytes",
+        "_workspace",
+        "_saved",
+    )
+
+    def __init__(self) -> None:
+        self.phase = ""
+        self.s0_attempts = 0
+        self.s0_bytes = 0
+        self.s7_attempts = 0
+        self.s7_bytes = 0
+        self.s8_attempts = 0
+        self.s8_bytes = 0
+        self._workspace: RepositoryWorkspace | None = None
+        self._saved: tuple[Any, Any] = (None, None)
+
+    def inventory_read(self, size: int) -> None:
+        self.s0_attempts += 1
+        self.s0_bytes += size
+
+    def text_read(self, size: int) -> None:
+        if self.phase == "channel":
+            self.s8_attempts += 1
+            self.s8_bytes += size
+        elif self.phase == "ast":
+            self.s7_attempts += 1
+            self.s7_bytes += size
+        else:
+            raise RuntimeError(
+                "main-workspace text read outside an attributed IO stage"
+            )
+
+    def attach(self, workspace: RepositoryWorkspace) -> None:
+        """Enable observation on ``workspace`` for the duration of one build."""
+
+        self._workspace = workspace
+        self._saved = (
+            workspace._inventory_read_probe,
+            workspace._text_read_probe,
+        )
+        workspace._inventory_read_probe = self.inventory_read
+        workspace._text_read_probe = self.text_read
+
+    def detach(self) -> None:
+        """Restore the caller's workspace exactly as it was attached."""
+
+        workspace = self._workspace
+        if workspace is None:
+            return
+        workspace._inventory_read_probe, workspace._text_read_probe = self._saved
+        self._workspace = None
+        self._saved = (None, None)
 
 
 class _MeteredWorkspace(RepositoryWorkspace):
-    """Component workspace counting real read attempts and successful bytes.
+    """Component workspace metering real read attempts and successful bytes.
 
     The restricted view itself is the real W-1 behaviour (base-class keyword
     parameters); this subclass only observes the reads the frozen layers
-    perform through the public ``inventory``/``read_text`` entries.
+    perform at the real read points (inventory ``read_bytes`` and
+    ``read_text``): pre-read rejections never count as attempts, post-read
+    failures (byte-cap rejection, decode failure) still meter their bytes,
+    and every counter lives on this throwaway instance.
     """
 
     def __init__(
@@ -1327,25 +1426,50 @@ class _MeteredWorkspace(RepositoryWorkspace):
         self.rescan_attempts = 0
         self.manifest_read_attempts = 0
         self.success_bytes = 0
+        self._inventory_reads = 0
+        self._text_reads = 0
+        self._read_bytes_seen = 0
+        self._inventory_read_probe = self._observe_inventory_read
+        self._text_read_probe = self._observe_text_read
+
+    def _observe_inventory_read(self, size: int) -> None:
+        self._inventory_reads += 1
+        self._read_bytes_seen += size
+
+    def _observe_text_read(self, size: int) -> None:
+        self._text_reads += 1
+        self._read_bytes_seen += size
 
     @staticmethod
     def _posix(relative_path: object) -> str:
         return str(relative_path).replace("\\", "/")
 
     def inventory(self) -> WorkspaceInventory:
+        reads_before = self._inventory_reads + self._text_reads
+        bytes_before = self._read_bytes_seen
         result = super().inventory()
-        self.rescan_attempts += result.discovered_files
-        self.success_bytes += sum(item.size for item in result.files)
+        self.rescan_attempts += (
+            self._inventory_reads + self._text_reads
+        ) - reads_before
+        self.success_bytes += self._read_bytes_seen - bytes_before
         return result
 
     def read_text(self, relative_path: object) -> str:
         posix = self._posix(relative_path)
-        if posix in self._manifest_set:
-            self.manifest_read_attempts += 1
-        else:
-            self.rescan_attempts += 1
-        text = super().read_text(relative_path)
-        self.success_bytes += len(text.encode("utf-8"))
+        manifest_read = posix in self._manifest_set
+        reads_before = self._inventory_reads + self._text_reads
+        bytes_before = self._read_bytes_seen
+        try:
+            text = super().read_text(relative_path)
+        finally:
+            real_reads = (
+                self._inventory_reads + self._text_reads
+            ) - reads_before
+            if manifest_read:
+                self.manifest_read_attempts += real_reads
+            else:
+                self.rescan_attempts += real_reads
+            self.success_bytes += self._read_bytes_seen - bytes_before
         return text
 
 
@@ -1486,21 +1610,27 @@ def build_monorepo_profile(
         raise ValueError(f"unknown manifest policy: {manifest_policy}")
 
     budgets = monorepo_budgets if monorepo_budgets is not None else MonorepoBudgets()
-    outcome = _discover(workspace, budgets, manifest_policy)
-
-    admitted = {item.path for item in outcome.main_inventory.files}
-    all_repo_files = admitted | outcome.channel_paths
-    name_table = _build_name_table(
-        outcome.components, all_repo_files, outcome.manifest_texts
-    )
-    edge_items, unknown_items, summaries, ast_reads = _scan_imports(
-        workspace,
-        outcome.owned_py,
-        outcome.components,
-        name_table,
-        outcome.manifest_texts,
-        all_repo_files,
-    )
+    meter = _ReadPhaseMeter()
+    meter.attach(workspace)
+    try:
+        outcome = _discover(workspace, budgets, manifest_policy, meter)
+        admitted = {item.path for item in outcome.main_inventory.files}
+        all_repo_files = admitted | outcome.channel_paths
+        name_table = _build_name_table(
+            outcome.components, all_repo_files, outcome.manifest_texts
+        )
+        meter.phase = "ast"
+        edge_items, unknown_items, summaries = _scan_imports(
+            workspace,
+            outcome.owned_py,
+            outcome.components,
+            name_table,
+            outcome.manifest_texts,
+            all_repo_files,
+        )
+        meter.phase = ""
+    finally:
+        meter.detach()
 
     gaps: list[tuple[str, str]] = list(outcome.gaps)
 
@@ -1533,9 +1663,14 @@ def build_monorepo_profile(
                  _budget_gap_detail("edge-limit", dropped_edges))
             )
         if kept_unknowns:
-            for (_source, _name), count in kept_unknowns:
+            # IR-02 (Packet v5.1 section 5.3.4): count DROPPED RECORDS per
+            # component, not import sites -- sum over scan summaries must
+            # equal the unknown-import-limit gap count (V7 balance); the
+            # kept records' UnknownImportRecord.count keeps its site
+            # semantics.
+            for (_source, _name), _count in kept_unknowns:
                 unknown_by_component[_source] = (
-                    unknown_by_component.get(_source, 0) + count
+                    unknown_by_component.get(_source, 0) + 1
                 )
             gaps.append(
                 (
@@ -1572,6 +1707,14 @@ def build_monorepo_profile(
     pools = _effective_pools(budgets, base_options)
     model_active = model_client is not None and base_options.model_id != "unset"
     remaining_calls = budgets.max_total_model_calls
+    # IR-01 (Packet v5.1 section 5.4.4 single scheduling rule): ONE guard
+    # for the whole build -- the effective min(requested, caller) pools are
+    # shared across every component; per-attempt estimates are checked
+    # against all three remainders, pre-deducted and never refunded
+    # (failures and timeouts consume), unfunded attempts are not scheduled.
+    shared_guard = (
+        _AggregatePoolGuard(model_client, list(pools)) if model_active else None
+    )
     call_degraded_components = 0
     blocked_attempts_total = 0
 
@@ -1656,12 +1799,18 @@ def build_monorepo_profile(
                 base_options,
                 budgets=replace(base_options.budgets, max_llm_calls=allowed),
             )
-            guard = _AggregatePoolGuard(model_client, list(pools))
+            scheduled_before = shared_guard.scheduled_calls
+            blocked_before = shared_guard.blocked_attempts
             semantic_result = build_semantic_top_n(
-                ram_result.facts, options=stage_options, model_client=guard
+                ram_result.facts, options=stage_options,
+                model_client=shared_guard,
             )
-            remaining_calls -= guard.scheduled_calls
-            blocked_attempts_total += guard.blocked_attempts
+            remaining_calls -= (
+                shared_guard.scheduled_calls - scheduled_before
+            )
+            blocked_attempts_total += (
+                shared_guard.blocked_attempts - blocked_before
+            )
             effective_options = stage_options
         elif model_active:
             semantic_result = build_semantic_top_n(
@@ -1798,17 +1947,19 @@ def build_monorepo_profile(
         overflow_manifest_count=outcome.overflow_manifest_count,
     )
 
-    channel_success_bytes = sum(
-        len(text.encode("utf-8")) for text in outcome.manifest_texts.values()
-        if text
-    )
     metering = ResourceMetering(
-        main_inventory_read_attempts=outcome.main_inventory.discovered_files,
+        # IR-03 (Packet v5.1 section 5.4.4-IO): real read attempts and
+        # successful bytes over the nine IO stages, observed at the actual
+        # read points (never discovered/candidate/kept-set sizes), including
+        # work that later caps reject; failed attempts count 0 bytes.
+        main_inventory_read_attempts=meter.s0_attempts,
         component_rescan_read_attempts=rescan_attempts,
         profile_manifest_read_attempts=manifest_attempts,
-        ast_read_attempts=ast_reads,
-        metadata_channel_read_attempts=outcome.channel_read_attempts,
-        read_success_bytes=success_bytes + channel_success_bytes,
+        ast_read_attempts=meter.s7_attempts,
+        metadata_channel_read_attempts=meter.s8_attempts,
+        read_success_bytes=(
+            success_bytes + meter.s0_bytes + meter.s7_bytes + meter.s8_bytes
+        ),
     )
 
     discovery = ComponentDiscoveryResult(
@@ -2154,6 +2305,7 @@ _KIND_VALUES: Final[frozenset[str]] = frozenset(set(_MANIFEST_EXACT_KINDS.values
 }
 _HEX64_RE: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
 _SEGMENT_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9._\-]+$")
+_DRIVE_PREFIX_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z]:")
 _GAP_CODE_RE: Final[re.Pattern[str]] = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 
 
@@ -2170,8 +2322,22 @@ def _check_path(value: object, *, charset: bool = False) -> None:
         _invalid("path fields must be non-empty strings")
     if value == ".":
         return
-    if "\x00" in value or value.startswith("/") or value.endswith("/"):
+    # V5 (Packet v5.1 section 5.4.8): repo-relative POSIX only -- reject
+    # Windows drive prefixes ("C:/...", "C:x"), any backslash (also the
+    # UNC share form), NUL, absolute and trailing-slash shapes. Legal
+    # Unicode segments stay allowed outside the charset-checked families.
+    if (
+        "\x00" in value
+        or value.startswith("/")
+        or value.endswith("/")
+        or "\\" in value
+        or _DRIVE_PREFIX_RE.match(value) is not None
+    ):
         _invalid(f"invalid path shape: {value!r}")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        _invalid(f"path is not valid UTF-8: {value!r}")
     parts = value.split("/")
     if any(part in ("", ".", "..") for part in parts):
         _invalid(f"invalid path segment: {value!r}")
@@ -2402,8 +2568,10 @@ def validate_component_graph_payload(payload: Mapping[str, object]) -> None:
         _invalid("unassigned_files exceed the schema hard cap")
     for item in unassigned:
         _check_path(item)
-    if unassigned != sorted(unassigned):
-        _invalid("unassigned_files must be sorted")
+    if unassigned != sorted(unassigned) or len(set(unassigned)) != len(
+        unassigned
+    ):
+        _invalid("unassigned_files must be sorted and unique")
     unassigned_count = payload.get("unassigned_file_count")
     if type(unassigned_count) is not int or unassigned_count < len(unassigned):
         _invalid("unassigned_file_count")
@@ -2425,6 +2593,9 @@ def validate_component_graph_payload(payload: Mapping[str, object]) -> None:
         summaries_by_id[summary_id] = item
     if sorted(summaries_by_id) != sorted(ids) or len(summaries) != len(ids):
         _invalid("scan_summaries must cover each component exactly once")
+    summaries_order = [item["component_id"] for item in summaries]  # type: ignore[index]
+    if summaries_order != sorted(summaries_order):
+        _invalid("scan_summaries must be component_id-sorted")
     for entry in components:
         summary = summaries_by_id[entry["component_id"]]  # type: ignore[index]
         for field in _SCAN_COUNT_FIELDS:
@@ -2553,9 +2724,22 @@ def validate_component_graph_payload(payload: Mapping[str, object]) -> None:
     budgets = build_section["monorepo_budgets"]
     if not isinstance(budgets, Mapping) or set(budgets) != _BUDGET_KEYS:
         _unknown("monorepo_budgets keys")
-    for value in budgets.values():
-        if type(value) is not int or value < 1:
-            _invalid("monorepo_budgets values")
+    # V8 (Packet v5.1 sections 5.4.3/5.4.8): the effective budgets carry
+    # exact-int legal domains (the schema hard caps are the domain upper
+    # bounds; defaults are NOT hard caps) plus the frozen cross-field
+    # invariant total >= prompt + output. Same table as construction-time
+    # validation -- a consistently digest-bound payload cannot smuggle an
+    # out-of-domain budget through the unbound build section.
+    for name, (low, high) in _BUDGET_DOMAINS.items():
+        value = budgets[name]  # type: ignore[index]
+        if type(value) is not int or not low <= value <= high:
+            _invalid(f"monorepo_budgets.{name} domain")
+    if (
+        budgets["aggregate_max_total_tokens"]  # type: ignore[index]
+        < budgets["aggregate_max_prompt_tokens"]  # type: ignore[index]
+        + budgets["aggregate_max_output_tokens"]  # type: ignore[index]
+    ):
+        _invalid("aggregate_max_total_tokens must be >= prompt + output")
     if len(components) > budgets["max_components"]:
         _invalid("components exceed the effective max_components")
     if len(edges) + len(unknowns) > budgets["max_edges"]:

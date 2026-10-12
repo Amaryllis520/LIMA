@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePath
 from typing import Iterable, Iterator, Optional
@@ -147,6 +148,14 @@ class RepositoryWorkspace:
         self._metadata_files = (
             None if metadata_files is None else frozenset(metadata_files)
         )
+        # IP-0023 IR-03 (in-call-scope private read observation): both default
+        # to None = observation disabled = behaviour byte-identical to the
+        # legacy view. When set, each fires exactly once per real read
+        # attempt at the actual read point with the successful byte count
+        # (0 when the underlying read itself failed). Instance-scoped only:
+        # no caching, no extra reads, no cross-call state.
+        self._inventory_read_probe: Callable[[int], None] | None = None
+        self._text_read_probe: Callable[[int], None] | None = None
 
     @property
     def admitted_files(self) -> frozenset[str] | None:
@@ -265,8 +274,12 @@ class RepositoryWorkspace:
             try:
                 data = path.read_bytes()
             except OSError:
+                if self._inventory_read_probe is not None:
+                    self._inventory_read_probe(0)
                 self._record_skip(result, "unreadable")
                 continue
+            if self._inventory_read_probe is not None:
+                self._inventory_read_probe(len(data))
             if b"\x00" in data[:8_192]:
                 self._record_skip(result, "binary")
                 continue
@@ -306,7 +319,15 @@ class RepositoryWorkspace:
         # inventory hashes exact file bytes, so any newline normalisation
         # here would make CRLF files fail the index drift check (and would
         # also contradict the U+000A-only line-number convention).
-        return path.read_bytes().decode("utf-8")
+        try:
+            data = path.read_bytes()
+        except OSError:
+            if self._text_read_probe is not None:
+                self._text_read_probe(0)
+            raise
+        if self._text_read_probe is not None:
+            self._text_read_probe(len(data))
+        return data.decode("utf-8")
 
     def absolute_file(self, relative_path: str | os.PathLike[str]) -> Path:
         """Resolve an inventoried file while enforcing the workspace boundary."""
