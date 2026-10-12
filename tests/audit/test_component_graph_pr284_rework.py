@@ -1445,6 +1445,23 @@ class ValidatorStructureTests(unittest.TestCase):
                     self.mutated(unbuild_all_and_reverse)
                 )
 
+    def test_duplicate_evidence_rejected(self) -> None:
+        # IR-04 exit 2 completion (CR-60-PR284-SF-20261012/v1): a sorted
+        # but non-unique evidence list is the one V6 dedup face the v1
+        # mutation table left uncovered; the identity digest is still
+        # consistently recomputed, so only the dedup rule can reject it.
+        def duplicate_evidence(payload: dict[str, Any]) -> None:
+            evidence = payload["edges"][0]["evidence"]
+            evidence.insert(0, dict(evidence[0]))
+
+        with self.assertRaises(
+            ContractError,
+            msg="V6 must reject: duplicate-evidence",
+        ):
+            self.cg.validate_component_graph_payload(
+                self.mutated(duplicate_evidence)
+            )
+
     def test_budget_domains_and_cross_field_invariant(self) -> None:
         def budget(key: str, value: Any) -> Any:
             def _mutate(payload: dict[str, Any]) -> None:
