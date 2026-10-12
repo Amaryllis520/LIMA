@@ -1,27 +1,50 @@
 # LIMA Implementation Packet — IP-0044 本机脱敏日志 Artifact 存取（首片）
 
-- Packet 版本：`2.1`（2026-10-11；状态 `DESIGN-REWORK / PENDING-MERGE`，docs-only PR #283 呈审对象）
+- Packet 版本：`2.2`（2026-10-12；状态 `RC-REVISION / PENDING-MERGE`，docs-only PR #283 呈审
+  对象=本版新精确 head）
 - 修订批次：D1R——v1.0（@`1e6a68743b38795089c56a6edd80d49d0c770e08`）被 Maintainer 否决合并
   （"仅余 P3 文字级"结论被 `MR-66-PR283-D1-REPAIR-AND-IMPLEMENTATION-20261011/v1` 替代）；
   v2.0（@`8377a6eb4ee9dae43fc0e8fa246082de1458ee48`，内容 SHA-256
   `08aa375394a12e573be2e8b6c2564a313065d602d16c49cd25e28015fdd1f779`，862 行——尾部空元素
   计数口径不计，哈希为准）按六项 R66 修正整体修订并取代 v1.0，v1.0/v2.0 均保留为历史证据
-- D1F 修订（本版，2026-10-11）：v2.0 head `8377a6eb` 经新审核承认其已成立修正与真实证据、
-  但暂不批准合并（说明书 `MR-66-PR283-D1F-AND-CODE-DELIVERY-20261011/v1`）；本版按
+- D1F 修订（2026-10-11）：v2.0 head `8377a6eb` 经新审核承认其已成立修正与真实证据、
+  但暂不批准合并（说明书 `MR-66-PR283-D1F-AND-CODE-DELIVERY-20261011/v1`）；该版按
   R66F-01（seal expected 参数贯通）/R66F-02（持久预留-结算协议）/R66F-03（真实入口错误归属）
-  在同一文件修订，新 commit 落在 `8377a6eb` 之上（不 amend/force，四 commit 历史保留）；
-  行数口径=本版 `wc -l` 实际计数（哈希为准）
+  在同一文件修订，新 commit 落在 `8377a6eb` 之上（不 amend/force，历史保留）；
+  行数口径=各版 `wc -l` 实际计数（哈希为准）
+- **RC 修订（本版 v2.2，2026-10-12）**：v2.1 head `1e223326` 经第三轮审核+实测承认其已
+  成立修正与真实证据、**暂不批准合并**（说明书
+  `MR-66-PR283-RESOURCE-CORRECTION-AND-CODE-20261012/v1`，SHA-256
+  `b558b020f6021837aea6657e9100c33d4c862b1e58e011380a16711c78a3845a`）；本版按
+  R66S-01（SQLite 物理预算规约——机制①单选：`PRAGMA max_page_count=M` 页数硬限+受限事务
+  页级 journal 上界+每步预留，口径换页 denomination）/R66S-02（共享 blob 唯一物理键结算
+  五条规则+零新表方案）同步修订全部受影响协议步骤、限额表、预留/结算、故障矩阵、错误
+  副作用、验收映射与测试计划，并把 D2 接续义务预告写入正文（§10.1）；§7.4 十七行替换
+  清单逐项核销（§1.3 登记）；新 commit 落在 `1e223326` 之上（不 amend/force，六 commit
+  历史保留）。**Coordinator 单值裁定引用**：资源机制单选=§11.1（①：max_page_count+
+  页级上界+每步预留，不带②入 D2）；共享 blob exact 私有表示=§11.4（复用
+  `seal_attempts.blob_id` 在途登记，零新表/零新列/零新公共接口）；例值处置=按新规约全部
+  重算重写（一次选定、全文一致，§11.7）；公共限额面零变更=§11.2
 - Assignment：`ASN-D1R-IP-0044-66-LOCAL-LOG/v1`（2026-10-11；授权指针
-  `MR-66-PR283-D1-REPAIR-AND-IMPLEMENTATION-20261011/v1`）；**D1F 增量：
+  `MR-66-PR283-D1-REPAIR-AND-IMPLEMENTATION-20261011/v1`）；D1F 增量：
   `ASN-D1F-IP-0044-66-LOCAL-LOG/v1`（2026-10-11；授权指针
-  `MR-66-PR283-D1F-AND-CODE-DELIVERY-20261011/v1`）**
+  `MR-66-PR283-D1F-AND-CODE-DELIVERY-20261011/v1`）；**RC 增量：
+  `ASN-RC-IP-0044-66-LOCAL-LOG/v1`（2026-10-12；授权指针
+  `MR-66-PR283-RESOURCE-CORRECTION-AND-CODE-20261012/v1`；Assignment SHA-256
+  `a555f9afe27bd0fc48348bff806e5ead4c509ccba3ff9116d9d61aa072392030`）**
 - 编制角色：Packet & Verification Agent（运行模型：无法核验——未取得可独立核验的运行元数据，
   TELEMETRY-MISSING / RUNTIME-UNVERIFIED，不伪造）
 - 设计探针：`.pv_tmp/issue66-local-log-2026-10-10/probes/`（P1–P4 为 D1 记录；P5–P8 为 D1R
-  新增实测/模型记录；P9–P11 为 D1F 新增实测/模型记录，均可复现；下文标注「设计探针实测
-  （probe Px，可复现）」处均以该记录为据）
+  新增实测/模型记录；P9–P11 为 D1F 新增实测/模型记录；**RC-P1–RC-P4 为 RC 新增实测/模型
+  记录（真实 DDL/九事务形状/页级上界推翻尝试/max_page_count/整 root Oracle/共享 blob
+  六场景）**，均可复现；下文标注「设计探针实测（probe Px，可复现）」处均以该记录为据）
 - 审核探针证据（引用，只读）：`output/issue66-pr283-review-2026-10-11/probe_results.json`、
-  `output/issue66-pr283-v2-review-2026-10-11/review_v2_probe_results.json`
+  `output/issue66-pr283-v2-review-2026-10-11/review_v2_probe_results.json`、
+  **`output/issue66-pr283-v21-review-2026-10-12/capacity_probe_results.json`（第三轮实测
+  反例：journal 行数公式被真实 SQLite 推翻〔8 行 66,176 B>J(8)=57,344、12 行 99,008 B>
+  73,728〕、初始 DB 28,672 B 未入账、共享 blob 结算对象账 1→2——R66S-01/02 反例依据；
+  引用不越类：journal 反例=对一般行数公式的反例、非已实现事务超限；blob 反例=原协议
+  模型实测、非产品缺陷）**
 
 ## 1. Header
 
@@ -85,9 +108,27 @@ IMPL Assignment + 主会话真实派发五条件齐备后启动。
   b_need=134,768〕及 PROBE_LOG 一致）；②SF-D1F-02——CR-D1F-01 补裁落位 §4.4（权威行
   RESERVED 的 seal 判定唯一归属 `STAGING_STATE_INVALID`，补裁原文见 §4.4；§4.2 ①–⑤ 枚举行/
   §4.4 末句/§5.3 handle 字段表/§6.1 (b) 触发面/§8 谓词组合连带同步）；§1.2 指针与 §1.3
-  D16/D17 勘误行登记。
+  D16/D17 勘误行登记。**〔v2.2 注：本批勘误的 269,536/134,768 等数值面属旧行数/行字节
+  口径的历史登记，已被 RC 页级规约全量重算重写（§7.1f），保留不改写以存证据链〕**
+- **RC 修订（2026-10-12，版本升至 `2.2`）**：v2.1 head `1e223326` 被第三轮审核
+  （DI-025）+实测反例（DI-026）认定：journal 行数公式无上界证明（真实 SQLite 反例）、
+  P10 root 计账漏 DB 文件、共享 blob 被 per-attempt 结算重复计数——三项均为资源计账
+  证明缺口，不重开总体架构。本版按 RC Assignment（DI-028）§7.1/§7.2/§7.4 修订：
+  R66S-01 落位=撤销旧公式上界地位（例值按新规约全部重算重写——§11.7 二选一选定
+  「重算重写」）、建立拟用真实 DDL/索引与九事务形状目录+K_T 派生（§7.3）、冻结支持
+  的 SQLite 配置面并绑定 root metadata（§7.3）、页级 journal 上界公式+五条适用前提+
+  推翻义务（§7.3）、`reserved_metadata_bytes` 语义改 DB 物理页增长预留 Δpages×P
+  （显式取代 D1F Assignment §11.6 行字节合计口径——§7.4 R6）、`max_page_count=M` 派生
+  硬限与到限内容 IO 前稳定拒绝（§7.3/§7.1a 行 12）、限额表行 4/5/10/12 语义列重写；
+  R66S-02 落位=五条唯一结算规则+零新表方案（seal_attempts.blob_id 在途登记+唯一物理键
+  集合 U 对账+账本单调≥|U|+首次差额入账+重复 no-op+判定与对账不一致 fail-closed，
+  §7.2/§7.1d/§7.1f）；D2 接续义务预告三条写入 §10.1。**三不变**：18-ID 映射分布
+  不变（14/2/2/0）、44 方法最低数不变（新场景参数 case 接入既有族）、公共签名逐字
+  不变；23 错误码零新增。新增探针 RC-P1–RC-P4（真实 SQLite/真实文件树，如实分类）。
+  ER v5/v6 与 D1F Brief 结论限定登记见 DI-029（算术/RESERVED 修正事实保留；其
+  root/journal/共享 blob 保证被本轮反例限定）。
 
-### 1.2 六项 R66 + 三项 R66F（D1F）↔ 受影响章节/被替换旧条款对照表
+### 1.2 六项 R66 + 三项 R66F（D1F）+ 两项 R66S（RC）↔ 受影响章节/被替换旧条款对照表
 
 | 修正 | 规则摘要（单值） | 本版落点 | 被替换旧条款（@锚点） | 证据/探针 |
 |---|---|---|---|---|
@@ -98,8 +139,10 @@ IMPL Assignment + 主会话真实派发五条件齐备后启动。
 | R66-05 | 统一限额表（作用域/默认/合法域/硬上限/计数单位/预留-提交-失败-崩溃/稳定错误逐行单值）；计数语义与跨进程额度冻结；单 root 串行临界区+有限等待+SQLite 小记录；同 root limits 不一致→`STORE_CONFIG_CONFLICT`；journal 单值 DELETE | §7.1、§7.3、§7.1d、§8 | §7.1 零散限额行（约 L319–323）；§7.3 无条件 `PRAGMA journal_mode=WAL`（约 L350） | 合同分析级冻结（无实现实测；多进程/crash 兑现归 D2，如实标注）；说明书 §4 R66-05 |
 | R66-06 | 公共合同一次冻结：open 签名 policy 必填注入；get 六字段六步校验顺序；持久 handle 与 close 语义；lineage 最小面+`STAGING_STATE_INVALID`「已 abort」触发删除；`SealedLogReceipt`/`RetrievedLogArtifact` 分型（旧单类型删除） | §4.2 get G1–G6、§4.5、§5.1–5.3（含字段表）、§6.1、§10.1 | §4.5 open 只绑 tenant（约 L202–205）；§5.3 签名无 policy（约 L250–268）；§4.2 get G1–G4（约 L139–145）；§6.1「非本 store、已 abort」（约 L284–286）；§10.1 SF-05/SF-08 | Assignment §7.6 逐字裁定 + §11 单值；**CR-D1R-01 补裁（seal_log 状态判定全函数/方向性，§4.4）**；源码复核（`ArtifactReference` 六字段，§2.2） |
 | **R66F-01**（D1F） | seal 入口六段冻结次序：⓪ 参数形状（expected ∈ {None}∪{64 小写 hex fullmatch}+handle 形状；违反 → INVALID_ARGUMENT 零副作用）→ ①–⑤ 权威状态判定（CR-D1R-01 不变）→ 实物完整性核验（正常分支临界区内重核 staging〔四态映射 lstat→存在→size→digest〕/幂等分支核验已有 blob）→ expected 比较（正常=任何 publish IO 之前对重核 staging digest；幂等=blob 核验后返回前对已核验 blob digest；不符 → SEAL_DIGEST_MISMATCH 两分支）→ R2 预留事务 → 新发布/P2 commit 或幂等返回；S4 删除 expected 提及（只复核 staged 字节/记录）；「正确 blob+错 expected」→ SEAL_DIGEST_MISMATCH 且原状态不动 | §4.2（S4/seal 六段）、§4.3（新增两矩阵行）、§4.4 ③⑤、§5.3 签名说明、§6.1（错误表 6 行触发面）、§8（参数 case 接入） | §4.2 S4 末行 expected 句（@8377a6e 约 L231）；seal 伪代码无参数形状/核验/expected 次序（约 L232）；§4.4 ③⑤ 幂等不核 expected（约 L323–342）；§6.1 SEAL_DIGEST_MISMATCH 触发「S4」（约 L504） | 审核 `expected_digest_contract_static` 静态四事实（DI-021）；**P9（SQLite 实测：预留事务独立提交/P2 回滚不吞预留行；⓪ 形状谓词+次序）**；16 状态谓词模型只覆盖 ①–⑤ 状态分类、不覆盖 expected/实物变化（新 ER/Brief 标注）；**CR-D1F-01 补裁（SF-D1F-02，D1F 勘误第二批）：权威行 RESERVED 的 seal 判定唯一归属——§4.4** |
-| **R66F-02**（D1F） | 预留-结算协议（唯一形态）：seal_attempts 行承载 RESERVED（预留字段列；artifacts 状态机不扩）+R1（S3 前独立提交）/R2（P1 前独立提交）逐段新增峰值预留+P2 转实际+失败释放未用/已写实物继续占额+锁内有界结算（先结算后写；范围外/未知实物 fail-closed）+「Σ实际+Σ有效预留 ≤ cap」不变量（行 5 双口径）+journal 公式 4096×(计划脏行数+2)+16,384+诊断行取消（S2 失败零持久行）+行 7 计数单位含 RESERVED+524,288B 双副本分别预留 | §4.2（S0/S2d/R1/R2/P2）、§4.3（矩阵行 1/orphan 行）、§7.1（行 2/4–12 重写+计账细则+7.1d 扩+新增 7.1f 状态/动作表与七例数值反例集）、§7.3（journal 公式/seal_attempts 列）、§8、§9/§10/§12 同步 | §4.2 S0 额度检查（约 L205–206）；S2d 诊断记录（约 L222–223）；S3「单事务+账本预留」（约 L224–227）；§7.1 行 4–12 预留/失败列（约 L542–550）与行 2/行 10 诊断条款；§7.1d（约 L582–589）；§7.3 journal 推导（约 L644–647） | 审核 orphan 反例（ledger=0/physical=1）与 524,288B 峰值反例（DI-021，协议模型）；**P10（SQLite+文件系统模型：七例数值全演示、orphan 消解、双副本分别预留、二进程争额、小 aux cap、journal 公式、fail-closed）**；多进程/crash 兑现仍标设计（D2）；**SF-D1F-01 勘误（D1F 第二批）：例⑥数值修正 Σ=269,536（与 P10/PROBE_LOG 一致）** |
+| **R66F-02**（D1F） | 预留-结算协议（唯一形态）：seal_attempts 行承载 RESERVED（预留字段列；artifacts 状态机不扩）+R1（S3 前独立提交）/R2（P1 前独立提交）逐段新增峰值预留+P2 转实际+失败释放未用/已写实物继续占额+锁内有界结算（先结算后写；范围外/未知实物 fail-closed）+「Σ实际+Σ有效预留 ≤ cap」不变量（行 5 双口径）+journal 余量入账（**v2.1 的行数公式已撤销上界地位并被 v2.2 R66S-01 页级规约取代——本行历史登记保留，现行口径见 §7.3**）+诊断行取消（S2 失败零持久行）+行 7 计数单位含 RESERVED+524,288B 双副本分别预留 | §4.2（S0/S2d/R1/R2/P2）、§4.3（矩阵行 1/orphan 行）、§7.1（行 2/4–12 重写+计账细则+7.1d 扩+新增 7.1f 状态/动作表与七例数值反例集）、§7.3（journal 余量/**v2.2：DDL/形状目录/页级公式**）、§8、§9/§10/§12 同步 | §4.2 S0 额度检查（约 L205–206）；S2d 诊断记录（约 L222–223）；S3「单事务+账本预留」（约 L224–227）；§7.1 行 4–12 预留/失败列（约 L542–550）与行 2/行 10 诊断条款；§7.1d（约 L582–589）；§7.3 journal 推导（约 L644–647） | 审核 orphan 反例（ledger=0/physical=1）与 524,288B 峰值反例（DI-021，协议模型）；P10（SQLite+文件系统模型：orphan 消解、双副本分别预留、二进程争额、小 aux cap、fail-closed；**其 journal 行字节示意与「公式数值核对」证据面被 R66S-01 限定——DI-029/§7.4 R8**）；多进程/crash 兑现仍标设计（D2）；**v2.2 数值面按页级规约全部重算重写（§7.1f），RC-P1/RC-P3 为现行证据** |
 | **R66F-03**（D1F） | 真实入口错误归属：构造期错误（含 `SchemaVersion(3,0)` 的 SCHEMA_UNKNOWN_MAJOR）归 foundation/caller——get 未被进入、不映射；实际可传入的错误 schema_name/合法 4.x 非本片 minor（如 4.1）→ G2 UNSUPPORTED_SCHEMA；非 Reference 形状 → G1 INVALID_ARGUMENT；G4/G5 内部实际执行 decode/validation 的契约错误按既有映射；不新增 raw/dict 解析 API、不改 #58 | §4.2 G2、§6.1（UNSUPPORTED_SCHEMA 行+映射注重写）、§8（真实触发面） | §4.2 G2 括注「含契约层 SCHEMA_UNKNOWN_MAJOR 及构造期同族…映射」（@8377a6e 约 L256–258）；§6.1 映射注同名句（约 L518–522）——两句都删，不留变体 | 审核 `real_contract_constructor_call_order` 实测（DI-021：3.0 构造即抛且被调函数未进入；4.0/4.1 构造成功可传入）；**P11（git 对象抽取 cc4c1d31 复测+异名/非 Reference 可达性，协议层标注）**；SF-D1R-03 的入口映射部分被推翻（入口勘误，非新接口） |
+| **R66S-01**（RC） | SQLite 物理预算规约（**机制①单选**，Assignment §11.1）：①撤销旧行数公式 `4096×(N+2)+16384` 的安全上界地位，其例值全部按新规约重算重写（一次选定、全文一致）；②建立拟用真实 DDL/索引与**九事务形状目录**（init/R1/S3/S4/R2/P1 后登记=不使用/P2/失败结算/重开结算，逐类 K_T 派生：每 btree 写入行数+分裂余量+内部路径页，深度由 M 上界扇出推导）；③冻结支持的 SQLite 配置面（page_size=4096 实读验证/journal_mode=DELETE/auto_vacuum=NONE/synchronous 不降级/busy_timeout=10000/**max_page_count=M**/cache 与 spill 边界/临时文件声明）并绑定 `artifact_store_meta`，不依赖本机默认；④**页级 journal 上界** `journal_headroom(T)=(K_T+2)×(P+S)+2×S`（P=4096 实读；S=512 B/页探针冻结——实测本机 journal=512+K×4,104，每页开销 8 B，冻结值含扇区对齐与平台余量）+五条适用前提+推翻义务；⑤`max_page_count=M=floor(行5默认域值÷P)` 派生硬限（行 5 派生执行参数、非第 14 个公共限额；SQLITE_FULL→CAPACITY_EXCEEDED 稳定拒绝、到限内容 IO 前拒绝、不先越限再回滚）；⑥计费口径=root 下常规文件 st_size+有效预留（DB 按页计入行 5；`reserved_metadata_bytes`=Δpages×P 取代行字节合计；row bytes 行 9 逻辑界与 DB bytes 不双计；整区保守预留单列 reservation） | §7.3（DDL/形状目录/配置面/页级公式与前提/推翻义务/M 派定）、§7.1a（行 4/5/9/10/12 语义列）、§7.1d（journal/预留口径）、§7.1f（数值反例集全量重算重写）、§4.2（R1/R2 段）、§8（资源组+Oracle）、§10/§12 同步 | §7.1a 行 12 journal 公式 `journal_headroom(T)=4096×(T 计划脏行数+2)+16,384`（@1e223326 约 L717）；§7.1f `J(2)=32,768、J(3)=36,864、69,632` 与例①③⑤⑥⑦分量（约 L823–835，含 333,776/134,768/269,536）与 `J(1)=28,672…J(5)=45,056` 数值表（约 L837–839）；§7.3 验证边界段同名公式（约 L887–892）；§8 资源组 journal 数值核对与 333,776 例值（约 L954）；`reserved_metadata_bytes（按计划写入行字节合计）`（§4.2 R1/R2 段、§7.1a 行 5、行 9——**本行即对 D1F §11.6 的显式取代声明**）；§1.2/§12.3 P10 引用无限度标注（R8） | **RC-P1（真实 DDL 九形状实测：全部样本高水位≤页级上界；S 校准 slope=4,104/intercept=512；八项推翻尝试均未推翻）**；**RC-P2（max_page_count 实测：SQLITE_FULL 稳定拒绝×3、page_count=M、st_size=M×P、拒绝在 execute 步、大事务无越限增长）**；**RC-P3（整 root 独立 Oracle：终态账本==盘点两序列、init DB 即计额）**；审核 capacity_probe_results.json（行数公式反例，引用不越类）；官方依据=sqlite.org/atomiccommit.html（journal 按页存原始内容、页号随页存储、整扇区写入、头独立扇区、提交=删除） |
+| **R66S-02**（RC） | 共享 blob 唯一结算（五条规则 Maintainer 冻结原文+**exact 私有表示=Assignment §11.4 单值**）：物理身份键=`(tenant_storage_key, content_digest)`（同键只计一个 blob/一份内容字节；逻辑身份/staging 各自计）；orphan 判定查询物理键是否被**任何 SEALED Artifact 或已登记在途 owner**引用（在途登记=复用 `seal_attempts.blob_id`，R2 提交时写入——零新表/零新列/零新公共接口；行 10 组成不变）；结算幂等=唯一物理键集合 U 对账（内容寻址布局天然一键一文件；同键第二文件/布局外实物→fail-closed METADATA_CORRUPT；账本 hold<\|U\| 差额=真正新 orphan 首次按唯一键入账、hold≥\|U\| 保守 no-op 不减、重复结算/多同 digest 行 no-op；恢复先结算后写、多次 open/settle 不创造容量；判定与对账不一致 fail-closed）；P1 复用不预留新物理额度（键已引用→reserved_objects=0；对象数满不误拒同租户有效复用）；崩溃 orphan 重试 seal 复用已登记实物不重复加账（P2 只增逻辑身份与记录）；**原 per-attempt 负例（A SEALED+B idle STAGING 同 digest→对象账 1→2）保留为回归反例并标注「原协议模型反例，非产品实测」** | §7.2（五条规则落位）、§7.1a（行 4 预留/结算语义列）、§7.1b（计数语义物理键）、§7.1d（重开结算对账协议）、§7.1f（状态/动作表行 5/行 10+六场景四维度+原负例回归反例）、§4.2 R2（blob_id 在途登记）、§4.3（P1 后 P2 前矩阵行）、§8（六场景参数 case+四维度断言）、§7.3（blob_id 列语义） | §7.1d「orphan blob（blob 在、无 artifacts 行）→ 按实际字节转实际占用」（@1e223326 约 L779–780，per-attempt 判定）；§7.1a 行 4 预留列「R2 预留事务对计划新增物理对象预留（复用分支不新增）」（约 L709）；§7.1b「唯一物理 blob（内容寻址去重后）」（约 L736）；§7.1f 状态/动作表行 5/行 10 对象计数（约 L812/L817）；§4.3 矩阵「P1 发布后、P2 前」orphan 行（约 L427）与 §4.2 DR-PACKET-1 段 orphan 计额句（约 L406–408） | **RC-P4（真实 SQLite+真实文件六场景×四维度：A/B/C1/C2/D/E/F 全过；同键第二文件与布局外实物 fail-closed 实测；旧 per-attempt 规则对照复现对象账 1→2——标注「原协议模型反例，非产品实测」）**；审核 capacity_probe_results.json 共享反例（is_product_test=false，引用不越类）；DI-021 orphan 反例（协议模型） |
 
 ### 1.3 旧条款替换核销清单（D1R 十六行 + D1F 十五行，逐项核销登记）
 
@@ -122,7 +165,7 @@ IMPL Assignment + 主会话真实派发五条件齐备后启动。
 | 15 | §10.1 SF-05（abort 载体 D2 二选一） | 核销（裁定=删除触发条件）；§10.1 仅保留仍真实义务 | 已核销 |
 | 16 | §4.3 故障矩阵、§6.1 错误表、§8 测试计划不一致表述 | 同步改写（新增「SEALED 后实物损坏重复 seal」行、限额/计额用例、两平台租户键用例、膨胀反例用例） | 已核销 |
 
-**D1F 十五行替换核销登记（Assignment `ASN-D1F-IP-0044-66-LOCAL-LOG/v1` §7.4，对 v2.0 @8377a6e；无新旧并存，逐项核销）**：
+**D1F 十五行替换核销登记（Assignment `ASN-D1F-IP-0044-66-LOCAL-LOG/v1` §7.4，对 v2.0 @8377a6e；无新旧并存，逐项核销；下表为对 v2.0 的历史登记——其 D9 行引入的 journal 行数公式与 D15/D16 行的数值面已被 v2.2 RC R1–R3/R16 显式取代并重算重写，历史登记保留以存证据链）**：
 
 | # | 旧条款（v2.0 @8377a6e 锚点） | 处置与落点 | 核销 |
 |---|---|---|---|
@@ -143,6 +186,28 @@ IMPL Assignment + 主会话真实派发五条件齐备后启动。
 | D15 | §4.3 矩阵、§7.1 新增小节、§9/§10/§12 中与上述不一致的全部表述 | 同步改写（新增「stage 后 staging 改坏」「SEALED+错 expected 重试」矩阵行；§7.1f 新增小节；§7.4 kill 点增 R1 后+结算断言；§10.1/§11/§12 D2 义务与 diff 基线 `8377a6eb..HEAD` 同步） | 已核销 |
 | D16 | §7.1f 例⑥「Σ实际+Σ有效预留=271,536」（v2.1 首 commit @70906428 笔误：把已含于 A 预留 134,768 的 DB 行 2,000 重复相加；ER v5 SF-D1F-01） | 修正为 **Σ=269,536**（A 预留 134,768 已含其 DB 行 2,000，不再另计；等价拆分=预留 132,768+实际 DB 2,000+B 需 134,768；与 P10 例⑥及 PROBE_LOG 一致）（§7.1f） | 已核销 |
 | D17 | §4.2 ①–⑤/§4.4 末句/§5.3 handle 字段表/§6.1 (b)/§8：权威行 **RESERVED** 时 seal 判定未定义（v2.1 首 commit 的 ①–⑤ 五步未覆盖 RESERVED 行——ER v5 SF-D1F-02） | **CR-D1F-01 补裁**（原文逐字落位 §4.4）：declared_state 无论 "staged"/"sealed" 均唯一归属 `STAGING_STATE_INVALID`（触发 (b) 扩展形态，②′）；不按 ⑤ 正常路径处理（不重核、不发布）；RESERVED 行唯一处理通道=其所属 stage 操作自身与锁内结算（§7.1f 行 1–3）；§4.4 末句/§6.1 (b) 扩为「权威行为 STAGING **或 RESERVED**」；§8 标注两组合 | 已核销 |
+
+**RC 十七行替换核销登记（Assignment `ASN-RC-IP-0044-66-LOCAL-LOG/v1` §7.4，对 v2.1 @1e223326；无新旧并存，逐项核销；「现状锚点」行号按 @1e223326，修订后行号已移动、以章节/步骤锚为准）**：
+
+| # | 旧条款（v2.1 @1e223326 锚点） | 处置与落点 | 核销 |
+|---|---|---|---|
+| R1 | §7.1a 行 12 journal 公式 `journal_headroom(T)=4096×(T 计划脏行数+2)+16,384`（约 L717） | 撤销上界地位；替换为 §7.3 页级公式（K_T/P/S）+五条适用前提+官方机制依据+推翻义务 | 已核销 |
+| R2 | §7.1f 数值反例集参数 `J(2)=32,768、J(3)=36,864、69,632` 与例①③⑤⑥⑦ journal/metadata 分量（约 L823–835，含 333,776/134,768/269,536） | **按新页级规约全部重算重写**（§11.7 二选一选定「重算重写」，全文一致；旧值不保留任何一处未标注出现——§1.2 R66F-02 行的历史登记处已标「被取代」） | 已核销 |
+| R3 | journal 公式数值表 `J(1)=28,672…J(5)=45,056`（约 L837–839） | 同 R2 处置：替换为按真实 DDL 各形状 K_T 的页级上界数值表（§7.1f） | 已核销 |
+| R4 | §7.3 验证边界段 journal 公式（约 L887–892） | 替换为页级上界推导+官方依据+前提+探针推翻义务；补配置面声明与 max_page_count=M（§7.3） | 已核销 |
+| R5 | §8 资源组 `journal 公式数值核对（J(2)=32,768/J(3)=36,864）` 与 `333,776` 例值（约 L954） | 同步新公式/新例值；新增页级上界与事务内高水位断言用例（§8） | 已核销 |
+| R6 | `reserved_metadata_bytes（按计划写入行字节合计）` 口径（§4.2 R1 段约 L293–294、R2 段约 L340、§7.1a 行 5 约 L710、行 9 约 L714；D1F Assignment §11.6 同口径） | 语义改为 **DB 物理页增长预留 Δpages×P**（行 9 仍为单条记录逻辑校验上界、非计费单位）；**本行即对 D1F §11.6 的显式取代声明**（§4.2/§7.1a/§7.1f/§7.3） | 已核销 |
+| R7 | §7.3 及全文无 DDL/事务形状目录与配置面声明的空位 | 新增「拟用真实 DDL/索引与全部写事务形状目录」（九形状逐项，含「P1 后登记=不使用」表态）+ 支持的 SQLite 配置面（§7.3） | 已核销 |
+| R8 | P10 作为 journal 公式/root 计账证据的引用（§1.2 约 L101、§8 约 L954、§12.3 约 L1125 等） | 引用保留但**证据限度标注**：P10 计量口径漏 DB 文件（lhs=0 vs 实际 28,672 B 实测）、其 journal 行字节为示意；新计账口径由本轮 RC-P1..RC-P4 探针建立（§1.2 R66F-02 行/DI-029/§8/§12.3） | 已核销 |
+| R9 | §7.1d 重开结算「orphan blob（blob 在、无 artifacts 行）→ 按实际字节转实际占用」（约 L779–780） | 改为物理键引用判定+唯一物理键集合 U 对账（§7.1d/§7.2）；原负例保留为回归反例并标注「原协议模型反例，非产品实测」（§7.1f/§8） | 已核销 |
+| R10 | §7.1a 行 4 预留列「R2 预留事务对计划新增物理对象预留（复用分支不新增）」（约 L709） | 扩写：物理键已引用（SEALED/在途两类）→ reserved_objects=0；对象数满不误拒同租户有效复用（§7.1a 行 4/§7.2 规则 4） | 已核销 |
+| R11 | §7.1f 状态/动作表行 5/行 10 对象计数（约 L812/L817） | 按唯一物理键口径改写（同键共享不重复 +1；true orphan 首次 +1、重复结算 no-op）（§7.1f） | 已核销 |
+| R12 | §7.1b 计数语义「唯一物理 blob（内容寻址去重后）」（约 L736） | 明确物理身份键=(tenant_storage_key, content_digest)；逻辑身份/attempt/staging 分开计（行 4/6/7/10 各归其位）（§7.1b） | 已核销 |
+| R13 | §4.3 矩阵「P1 发布后、P2 前」orphan 行（约 L427）与 §4.2 DR-PACKET-1 段 orphan 计额句（约 L406–408） | orphan 判定与计额按物理键规则改写（R2 已在途登记→非误判 orphan；账上由 R2 预留覆盖）；DR-PACKET-1 段时态更新（本轮剩余=R66S-01/02 收口）（§4.2/§4.3） | 已核销 |
+| R14 | §7.3 `seal_attempts` 列说明（约 L908–912） | blob_id 列语义扩写（R2 提交写入=物理键在途登记）；D2 接续私有列（producer 上下文+stage_policy_digest+size_bytes）落位说明；行 10 组成不变声明（§7.3） | 已核销 |
+| R15 | §8 资源/恢复组用例（约 L953–954） | 新增六场景参数 case+四对比维度断言+独立 Oracle 整 root 盘点；44 最低数不变（§8） | 已核销 |
+| R16 | §12 完成定义第 4 条 diff 基线 `8377a6eb..HEAD` 与「四 commit 历史」（约 L1128–1130） | 改 `1e223326..HEAD`；六 commit 历史保留声明（§12.4） | 已核销 |
+| R17 | §4.2/§5.3/§10.1/§12 中与上述不一致的全部表述、§1.2 对照表、Packet header 版本/修订说明 | 同步改写（§1.2 扩 R66S-01/02 两行；header 版本 2.2、RC 批次与授权指针登记；D2 接续义务预告落位 §10.1；§2.1 DI-024..029）（本表 R17 与上述各行一并落地） | 已核销 |
 
 ## 2. Design Input Manifest 与 Explicitly Rejected Inputs
 
@@ -172,7 +237,13 @@ IMPL Assignment + 主会话真实派发五条件齐备后启动。
 | DI-020 | Decision | `docs/LIMA_Issue66_PR283_V2_Review_and_Next_Ruling_2026-10-11.md` | SHA-256 `1e3e4cfc86f9239baf0a83cf22e0ffd33c88e22637e1852bcfa908cb69f04f24`（D1F 编制时复算一致） | R66F-01/02/03 定义/锚点/反例；ER v4 扩展结论的限定（§4）；七例验收面（§5 R66F-02） | normative（经 DI-019/023 采纳为修订方向） | 从 DI-019/DI-023 |
 | DI-021 | Finding | `output/issue66-pr283-v2-review-2026-10-11/review_v2_probe_results.json`（同目录 review_v2_probes.py/remote_snapshot.json/Packet_8377a6eb.md/复跑结果） | SHA-256 `df4bd895435eecb69c10713ecae864bf3e10e2d641a8143f1dd1e85bc0a4bb77`（D1F 编制时复算一致） | ①构造时序三例（3.0 拒且未进入/4.0、4.1 入）；②expected_digest 契约静态四事实；③orphan 反例（ledger=0/physical=1）；④524,288B 峰值反例；⑤两类证据分类（API 实测 vs 协议模型） | evidence（引用时不得越类：①为 API 实测、③④为协议模型、`is_product_test=false`） | 与 D1F 探针 P9–P11 互证（DI-024 性质，登记于 PROBE_LOG） |
 | DI-022 | Decision | `.pv_tmp/issue66-local-log-2026-10-10/intent/Maintainer_Intent_MR-66-PR283-D1F-20261011_v1.md` | SHA-256 `6f8a2eecd20f1c6d9fdfee7c1396fe5451f5475e9d2c61c0c8cad16af0a96bf5`（D1F 编制时复算一致） | D1F 增量变化集、技术偏好、未确定事项下移清单 | evidence | 从 DI-019/DI-023 |
-| DI-023 | Decision | Coordinator Assignment `ASN-D1F-IP-0044-66-LOCAL-LOG/v1`（assignment/D1F_ASSIGNMENT.md） | SHA-256 `c078ae92e4b46f3297f08647924f6bc2b9219b8ad78a82a2a6117f8fa6c01150`（D1F 编制时复算一致） | §7.1–7.3 三项规约、§7.4 十五行替换清单、§8 验收判据、§11 十五条单值裁定（含 ⓪形状/比较次序、RESERVED 载体、诊断行取消、四态映射、journal 公式、行 5 双口径、行 7 单位、524,288B 分别预留、fail-closed 范围、R66F-03 归属、44/18-ID/签名三不变） | normative（Assignment） | 与本派发矛盾时以 Assignment 为准并上报 |
+| DI-023 | Decision | Coordinator Assignment `ASN-D1F-IP-0044-66-LOCAL-LOG/v1`（assignment/D1F_ASSIGNMENT.md） | SHA-256 `c078ae92e4b46f3297f08647924f6bc2b9219b8ad78a82a2a6117f8fa6c01150`（D1F 编制时复算一致） | §7.1–7.3 三项规约、§7.4 十五行替换清单、§8 验收判据、§11 十五条单值裁定（含 ⓪形状/比较次序、RESERVED 载体、诊断行取消、四态映射、journal 公式、行 5 双口径、行 7 单位、524,288B 分别预留、fail-closed 范围、R66F-03 归属、44/18-ID/签名三不变）——**其中 §11.6（journal 行数公式）与「metadata 增量=计划写入行字节合计」口径被 DI-028 §11 显式取代，其余继续有效** | normative（Assignment） | 与本派发矛盾时以 Assignment 为准并上报 |
+| DI-024 | Standard | `docs/ZCODE_LONG_TASK_ISSUE66_SQLITE_RESOURCE_CORRECTION_AND_CODE_2026-10-12.md`（RC 说明书） | SHA-256 `b558b020f6021837aea6657e9100c33d4c862b1e58e011380a16711c78a3845a`（RC 编制时复算一致） | §3=物理预算纠正、§3.1=机制选择与要固定什么、§3.2=计费口径、§4=共享 blob 唯一结算五条规则原文、§5=批次六步与退出条件、§6.2=D2 接续义务 | normative（Maintainer 指令正文） | 与其他输入冲突时以本文为准（经 DI-028） |
+| DI-025 | Decision | `docs/LIMA_Issue66_PR283_V21_Full_Review_and_Ruling_2026-10-12.md`（第三轮审核） | SHA-256 `0db42724343aa65a38c39ff4ba08c141e709d0156de9992de29c3eb77d675090`（RC 编制时复算一致） | R66S-01 定义/锚点/反例（§4）；R66S-02（§5）；D2 接续义务（§6）；轻量勘误（§7） | normative（经 DI-024/028 采纳为修订方向） | 从 DI-024/DI-028 |
+| DI-026 | Finding | `output/issue66-pr283-v21-review-2026-10-12/capacity_probe_results.json`（同目录 sqlite_capacity_probe.py/原 Packet 快照/remote_snapshot/复跑日志，只读） | SHA-256 `4336a9cf5a3b700a68fce7ec8683d416084b4144d2762f1ee618a5d6b9a52fcd`（RC 编制时复算一致） | ①真实 SQLite 3.45.3/page 4096/每行<8,192 B：1–5 行公式成立（样本）、8 行 66,176>57,344、12 行 99,008>73,728 被推翻（**对一般行数公式的反例，非已实现 LIMA 事务超限**）；②P10 初始 lhs=0 vs 实际 `metadata.sqlite3`=28,672 B（`model_includes_existing_db_file_bytes=false`）；③共享 blob 结算反例 objects 1→2、actual_unique_blob_files=1、is_product_test=false（**原协议模型反例，非产品缺陷**） | evidence（引用不得越类） | 与 RC-P1..RC-P4 探针互证 |
+| DI-027 | Decision | `.pv_tmp/issue66-local-log-2026-10-10/intent/Maintainer_Intent_MR-66-PR283-RC-20261012_v1.md`（RC Intent） | SHA-256 `3feaae96f54d989805784eaf54ff2046cef66c6cc2733da7f08aa448578e10ff`（RC 编制时复算一致） | RC 增量变化集、技术偏好、已授权下移清单 | evidence | 从 DI-024/DI-028 |
+| DI-028 | Decision | Coordinator Assignment `ASN-RC-IP-0044-66-LOCAL-LOG/v1`（assignment/RC_ASSIGNMENT.md） | SHA-256 `a555f9afe27bd0fc48348bff806e5ead4c509ccba3ff9116d9d61aa072392030`（RC 编制时复算一致） | §7.1 R66S-01 规约（九形状目录/页级公式与五前提/推翻义务/计费口径/独立 Oracle）、§7.2 R66S-02 五条规则+零新表方案+六场景四维度、§7.3 D2 接续义务、§7.4 R1–R17 替换清单、§8 验收判据、§11 单值裁定（机制①单选、零公共限额变更、页级公式、exact 表示=seal_attempts.blob_id、计费细则、D2 policy 规则、例值处置=重算重写、三不变） | normative（Assignment） | 与本派发矛盾时以 Assignment 为准并上报 |
+| DI-029 | Finding | ER Record v5（`ec5ce8d55c5ca76a4f89ba64b6b789e5be95f89e0f0362d6d38b59ceb0191592`）、ER v6（`a55b3e6995ce5c12cd2949004eee9edd039e3dfb1bde884833d0cf9e594a52d6`）、D1F Brief（`c0438620521b7aeed5dc8549d120a492cc2c574bd690a6a1a0890eabac9e7ff4`） | **适用旧 head `1e223326`**（DI-028 §3.5/§7.5 裁定） | 其算术/RESERVED 修正闭合结论仍成立（例⑥ 269,536 等事实保留）；**其 root/journal/共享 blob 保证被 R66S-01/02 反例限定**——ER v5 的 journal 核验只复算 J(1..5) 与页大小、未测事务内高水位；ER v6 增量结论不补物理层证明；Brief 的 READY 只适用旧 head。本轮修订后须锚定新 head 的独立 ER 增量（Assignment §1 后续角色链②） | background-only（历史证据，结论限定登记；不改旧文件） | 从 DI-024/DI-025/DI-026/DI-028 |
 
 ### 2.2 关键源码复核（@fbbbd619 git 对象，本 Packet 编制时亲验）
 
@@ -213,6 +284,10 @@ text 输出形态（classifier.py：PEM/URL 凭据→RESTRICTED 或敏感关键�
 | **WAL/DELETE 双轨可选带入 D2** | Assignment §7.5 第 7 条要求单值选定 | R66-05；DI-017 |
 | **「尾随空格已被 identifier 接受」表述** | identifier 字符类不含空格 | R66-03；P6-e；DI-015（trailing_space_contract_valid=false） |
 | **零散限额行（无作用域/计额/预留语义）** | 统一限额表（R66-05 列规范）取代 | R66-05；DI-013 |
+| **journal 行数公式 `4096×(N+2)+16384` 作为安全上界（含乘二/换例值变体）** | 真实 SQLite 反例推翻（8 行 66,176 B、12 行 99,008 B）；页级公式+前提+推翻义务取代 | R66S-01；DI-026；RC-P1 |
+| **机制②固定有界预留区（替代 max_page_count 的资源机制）** | Coordinator 单选裁定机制①（Assignment §11.1）：②同样须给 sizing 依据且运行时强制更弱、永久占额降利用率；不带②入 D2 | RC Assignment §11.1 |
+| **共享 blob per-attempt orphan 判定（「当前 attempt 无 artifacts 行即 orphan」）** | 被同租户同 digest 共享场景推翻（对象账 1→2 而唯一物理文件恒 1——原协议模型反例保留为回归反例）；物理键引用判定+U 对账取代 | R66S-02；DI-026；RC-P4 |
+| **为在途登记新建表/新列/公共接口** | Coordinator exact 表示单选=复用 `seal_attempts.blob_id`（零新表/零新列/零新公共接口；行 10 组成不变） | RC Assignment §11.4 |
 | **seal 返回 `content=b""` 双语义** | 「未读取」与「真实空日志」歧义；分型消除 | R66-06⑤；DI-017 §11.10 |
 
 ## 3. Goal / Non-goals
@@ -289,13 +364,16 @@ stage_log(text, producer)
       行承载预留，不建独立 reservations 表】：
       临界区内独立提交事务 INSERT seal_attempts 行 state=RESERVED（attempt 生命周期
       内部状态；**artifacts 表状态仍只有 STAGING/SEALED——RESERVED 不入 artifact
-      状态机**），携带预留字段：reserved_staging_bytes（=净化输出字节数，S3 段内容
-      峰值）、reserved_metadata_bytes（本段行自身+账本行增长，按计划写入行字节合计）、
-      reserved_journal_bytes（按 §7.1a 行 12 公式）；13 维账本行同事务 +N；行 7
-      live-staging 名额即占（RESERVED 也占——新 stage 不是免费重试）；保守预留超过
-      剩余额度 → CAPACITY_EXCEEDED 先拒绝（零提交）；**预留事务提交点=该事务
-      commit；此后才允许 staging 文件 IO**（进程死亡不丢账——预留先于文件 IO 已
-      持久化；P9 SQLite 实测：预留事务独立提交，后续事务回滚不吞预留行）
+      状态机**），携带预留字段（**v2.2 页 denomination，R66S-01**）：reserved_staging_bytes
+      （=净化输出字节数，S3 段内容峰值）、reserved_metadata_bytes（=本段 DB 物理页
+      增长预留 Δpages×P，按 §7.3 形状目录 T-R1 的派生页数——**取代 D1F「计划写入
+      行字节合计」口径；行 9 的行字节上界只是单条记录逻辑校验界、非计费单位，row
+      bytes 与 DB bytes 不双计**）、reserved_journal_bytes（=§7.3 页级公式
+      journal_headroom(T-R1)）；13 维账本行同事务 +N；行 7 live-staging 名额即占
+      （RESERVED 也占——新 stage 不是免费重试）；保守预留超过剩余额度 →
+      CAPACITY_EXCEEDED 先拒绝（零提交）；**预留事务提交点=该事务 commit；此后才
+      允许 staging 文件 IO**（进程死亡不丢账——预留先于文件 IO 已持久化；P9 SQLite
+      实测：预留事务独立提交，后续事务回滚不吞预留行）
   S3  有界 staging 写入：staging_id/artifact_id 系统生成；净化后字节按上限有界写入
       root/staging/<staging_id>/content.bin（O_CREAT|O_EXCL + fsync；写入原语达到上限
       即停止并失败——不允许「先完整写盘再拒绝」）
@@ -336,13 +414,19 @@ seal_log(handle, *, expected_content_digest=None)
         （=权威记录 content_digest）比对——**正确 blob + 错 expected →
         SEAL_DIGEST_MISMATCH，不返回「因为已 seal 所以成功」**；不新增 SEALED、
         不覆盖原 blob/metadata，原状态不动
-  R2  预留事务（仅正常分支；P1 之前；R66F-02）：UPDATE 同行写入发布段**新增峰值**
-      预留（publish 副本字节 + P2 metadata 增长〔artifacts 行+envelope_wire，受行 9
-      ≤8 KiB 约束〕+ journal 余量〔按 §7.1a 行 12 公式，含 R2 自身与其预留的 P2 事务〕），
-      独立提交；**此后才允许 publish 临时文件 IO**；staging 实际占用不重复扣、
-      **publish 副本必须另扣**（524,288B 规则：262,144 B staging+同大小发布副本是
-      至少 524,288 B 内容占用，同内容两份物理存在即两份占用，不可只扣一次内容字节）；
-      保守预留超过剩余额度 → CAPACITY_EXCEEDED 先拒绝（零提交、零 publish IO）
+  R2  预留事务（仅正常分支；P1 之前；R66F-02+R66S-02）：UPDATE 同行写入发布段**新增峰值**
+      预留（publish 副本字节 + DB 物理页增长预留 Δpages×P〔T-R2 与其预留的 T-P2 形状
+      派生页数，§7.3；行 9 逻辑界不参与计费〕+ journal 余量〔§7.3 页级公式
+      journal_headroom(T-R2)+journal_headroom(T-P2)——R2 段含其预留的 P2 事务〕）与
+      **blob_id=staged 内容 digest（R2 提交即该物理键 `(tenant_storage_key, content_digest)`
+      的在途登记，R66S-02 规则 2——零新表/零新列/零新公共接口；P1 后登记事务=不使用，
+      §7.3 形状目录 T-P1reg）**，独立提交；**此后才允许 publish 临时文件 IO**；staging
+      实际占用不重复扣、**publish 副本必须另扣**（524,288B 规则：262,144 B staging+
+      同大小发布副本是至少 524,288 B 内容占用，同内容两份物理存在即两份占用，不可只扣
+      一次内容字节）；**对象预留按物理键引用判定（R66S-02 规则 4）：物理键已被任何
+      SEALED Artifact 或已登记在途 owner 引用 → reserved_objects=0，否则 1——对象数
+      （行 4）已满不因此误拒同租户有效复用**；保守预留超过剩余额度 → CAPACITY_EXCEEDED
+      先拒绝（零提交、零 publish IO）
   P1  临界区内三分支 blob 发布（R66-02；与 P2 同置于单 root 跨进程串行临界区，§7.1d）。
       目标路径 = root/blobs/<tenant_storage_key>/<d[:2]>/<d>/blob.bin（d=staged 内容
       digest；物理键见 §4.4/§7.2）：
@@ -394,20 +478,23 @@ get_log(reference)   【六步校验顺序冻结，R66-06②；错误映射单�
 ```
 
 **对 #66 原文「先写临时 blob→fsync/verify→事务写 SEALED metadata→原子 rename」的处置声明
-（呈批项 DR-PACKET-1；v2.1 更新：R66-02 两前提〔既有 blob 有效复用与并发发布不覆盖〕已由 v2.0
-落地为三分支核验+临界区规则；本轮剩余=R66F-01/02/03 收口，处置随新 head 一并呈批，未获批前
-不视为已批准）**：
+（呈批项 DR-PACKET-1；v2.2 更新：R66-02 两前提〔既有 blob 有效复用与并发发布不覆盖〕已由 v2.0
+落地为三分支核验+临界区规则、R66F-01/02/03 已由 v2.1 收口；**本轮剩余=R66S-01/02 收口**，
+处置随 v2.2 新 head 一并呈批，未获批前不视为已批准）**：
 本片**保留原文全部四个元素**（临时写、fsync/verify、事务化 SEALED metadata、原子 rename），但把
 **原子 rename 移到 metadata 事务之前**（P1→P2）。理由与证明：成功可见点唯一化为「SQLite 提交
 可见 SEALED metadata」（P2）；由于 rename（P1）先于该点完成，**且 P1 三分支核验保证「已存在即
 有效、否则本次 seal 稳定失败」、发布与 P2 同置于单 root 跨进程串行临界区保证并发发布不覆盖已
 存在有效对象（R66-02）**，任何读者在看到 SEALED 引用之时 blob 必已完整发布且可验证——读者无
 不完整可见窗口；幂等重试同样核验实物+核对本次 expected（R66F-01），不因 DB 行返回假成功。崩溃
-残留对照：本协议在 P1 后 P2 前崩溃留下**可诊断 orphan blob**（无 metadata，读者不可见）；按
-R66F-02 结算规则该 orphan **按实际字节/对象继续占额**（重开结算转实际占用，不因释放预留漏账，
-§7.1f 例③/③b）；reconcile 分类覆盖原文要求的 orphan/metadata-only 集合。**覆盖范围**：本处置
-针对本片本机 SQLite+文件后端；未来 PostgreSQL/S3 适配器必须在同一不变量（读者永不见「SEALED
-而内容未完整发布」）下重新推导，不继承本结论。
+残留对照：本协议在 P1 后 P2 前崩溃留下**可诊断的已发布 blob**（无 artifacts 行，读者不可见）；
+**该 blob 的物理键已由 R2 提交在 `seal_attempts.blob_id` 在途登记（R66S-02 规则 2），重开结算
+按物理键引用判定其被在途 owner 引用——不按「当前 attempt 是否有自己的 artifacts 行」误判
+orphan、不搬走、不重复收费；其占用由 R2 预留覆盖并按 §7.1f 状态表转实际（预留转实际、对象按
+唯一物理键首计），不因释放预留漏账（§7.1f 例③/③b）；真正未被任何引用的 true orphan 才按唯一
+物理键首次入账（§7.1d 对账协议）**；reconcile 分类覆盖原文要求的 orphan/metadata-only 集合。
+**覆盖范围**：本处置针对本片本机 SQLite+文件后端；未来 PostgreSQL/S3 适配器必须在同一不变量
+（读者永不见「SEALED 而内容未完整发布」）下重新推导，不继承本结论。
 
 ### 4.3 状态机与故障点状态矩阵（条款 12、16；R66-02/04/05 + D1F R66F-01/02 同步）
 
@@ -424,7 +511,7 @@ EXPIRED/DELETING` 不出现：corruption 不改状态、在 G5 读时 fail close
 | S3 有界写入中崩溃（或达到上限即停） | 部分 staging 文件（≤上限） | RESERVED 行（写中；S3 完成事务未提交） | `staging`（未完成；结算→staging 按实际字节转实际占用，§7.1f 状态表行 2） | 该 staging 无引用可 get |
 | S3/S4 完成后、seal 前 | staging 完整 | STAGING 行（预留字段空、实际占用已计） | `staging`（结算 no-op） | 同上 |
 | P1 临界区内临时文件写/fsync 中 | publish 临时文件 | STAGING 行（R2 预留字段非空） | `orphan`（临时；结算按实际占额） | 无 SEALED 行 |
-| P1 发布后、P2 前 | 最终 blob 就位 | STAGING 行、无 artifacts 行 | `orphan`（blob 无 SEALED metadata；**按实际字节/对象占额——结算不释放，§7.1f 例③/③b**） | 调用者从未获得引用；伪造 id → ARTIFACT_NOT_FOUND |
+| P1 发布后、P2 前 | 最终 blob 就位 | STAGING 行、无 artifacts 行、**blob_id 已在途登记（R2 提交，R66S-02）** | `orphan`（按物理键引用判定=被在途 owner 引用——不搬走、不重复收费；占用由 R2 预留转实际；**对象按唯一物理键首计，per-attempt 误判〔对象 1→2〕不可达——R66S-02 回归反例见 §7.1f**；§7.1f 例③/③b） | 调用者从未获得引用；伪造 id → ARTIFACT_NOT_FOUND |
 | P1 ②/③ 核验既有实物失败（坏/链接异常/缺失） | 原实物保持原样（不覆盖/修复/改动） | STAGING 行（**无新增 SEALED**） | `staging`/`corrupt` 诊断 | 无新增引用；残留计额（§7.1） |
 | **stage 后 staging 被改坏（截断/篡改/删除/替换为链接或目录），seal 重核（R66F-01 新增）** | staging 损坏/缺失/异常 | STAGING 行（无新增 SEALED） | `staging`/`corrupt` 诊断 | **seal：按 fresh staging 四态映射拒绝（PATH_POLICY_VIOLATION/BLOB_MISSING/BLOB_SIZE_MISMATCH/BLOB_CORRUPT，次序 lstat→size→digest），零发布、零新增 SEALED、预期比较不掩盖实物错误**；该 staging 无引用可 get |
 | P2 事务中崩溃 | 最终 blob 就位 | DELETE hot journal → 重启自动回滚：有 artifacts(SEALED) 行或无 | 有行=完全成功；无行=上一种 orphan | 有行则 get 正常且 G5 全过 |
@@ -706,15 +793,15 @@ tenant 与调用者传入字符串均不作为身份认证依据（§4.5）。
 | 1 | `max_input_bytes` 单条日志输入 UTF-8 字节 | 每次调用（叠加注入 policy 更严值） | 262,144 | [1, 262,144] | 262,144（=PrivacyLimits∩ContractLimits string 上限，**不可扩**） | 输入字节 | 无预留（S0 纯校验）；失败=零写入；崩溃=无副作用（任何写入前） | `INPUT_BUDGET_EXCEEDED` |
 | 2 | `max_sealed_bytes` 净化输出封存字节 | 每次调用（同上） | 262,144 | [0, 262,144] | 262,144（同上交集；更严 policy 收紧，不回填宽默认） | 净化输出字节 | 无预留（S2 写前校验，先于 R1 预留事务）；失败=零内容文件、零正文入库、**零持久诊断行**（R66F-02 取消——失败信息走有界错误输出）；崩溃=写前失败无内容 | `SEALED_BUDGET_EXCEEDED` |
 | 3 | `max_envelope_bytes` envelope wire | 进程内 | 1,048,576 | 固定（契约 `ContractLimits.max_input_bytes`） | 1,048,576 | wire 字节 | encode 时校验；失败=拒绝封存（本片 envelope 字段全有界，正常不可达） | `INTERNAL_STORAGE_ERROR`（契约资源上限映射） |
-| 4 | `max_blob_objects` root 持久对象总数 | root 跨进程 | 10,000 | [1, 1,000,000] | 1,000,000 | 唯一物理 blob（内容寻址去重后） | R2 预留事务对计划新增物理对象预留（复用分支不新增）；P2 提交=占用；失败=已发布 orphan **继续按实际占额**（不因释放预留漏账）、未发布释放预留；崩溃=锁内结算 orphan/已发布实物转实际占用（§7.1f） | `CAPACITY_EXCEEDED` |
-| 5 | `max_total_root_bytes` root 磁盘总字节（原 `max_total_blob_bytes` 更名扩域：blob+staging+orphan+quarantine+envelope/metadata+SQLite 数据与 journal+锁文件） | root 跨进程 | 512 MiB | [1 MiB, 64 GiB] | 64 GiB | root 下实际字节（**双口径盘点，R66F-02：实际字节与未结算有效预留分开列报，不把保守 charge 冒称物理实物**） | R1 预留（staging 内容+R1 metadata+journal）→S3/S4 转实际→R2 追加（**publish 副本另扣**+P2 metadata+journal 余量）→P2 转实际；失败=释放未实际使用的预留、已写实物继续按实际占额；崩溃=锁内结算（实物在→转实际；无实物→空预留解除；orphan→转实际）；**不变量 Σ(实际占用)+Σ(未结算有效预留) ≤ cap，每段入口检查**（含 SQLite 数据与 journal） | `CAPACITY_EXCEEDED` |
+| 4 | `max_blob_objects` root 持久对象总数 | root 跨进程 | 10,000 | [1, 1,000,000] | 1,000,000 | 唯一物理 blob（**物理键去重——`(tenant_storage_key, content_digest)` 跨 attempt 共享只计一次**，R66S-02 规则 1） | R2 预留事务按**物理键引用判定**预留（规则 4：键已被任何 SEALED Artifact〔artifacts 行 state=SEALED ∧ content_digest=d〕或已登记在途 owner〔seal_attempts 非终态行 ∧ blob_id 非空〕引用 → reserved_objects=0；否则 1）；P2 提交=占用；**对象数已满不误拒同租户有效复用（规则 4）**；失败=已发布 orphan **继续按实际占额**（不因释放预留漏账）、未发布释放预留；崩溃=锁内按唯一物理键集合 U 对账结算（首次差额入账、重复 no-op、保守不减，§7.1d/§7.1f）；同 digest 多行/重复结算不重复 +1 | `CAPACITY_EXCEEDED` |
+| 5 | `max_total_root_bytes` root 磁盘总字节（原 `max_total_blob_bytes` 更名扩域：blob+staging+orphan+quarantine+envelope/metadata+SQLite 数据与 journal+锁文件） | root 跨进程 | 512 MiB | [1 MiB, 64 GiB] | 64 GiB | **root 下常规文件 `st_size`+有效 reservation（R66S-01 计费口径；不冒称整个卷分配块/目录开销；DB 文件按 st_size=提交后 page_count×P 计入；行 9 逻辑行字节不入账——row bytes 与 DB bytes 不双计；双口径盘点：实际字节与未结算有效预留分开列报，不把保守 charge 冒称物理实物；整区保守预留单列 reservation、不称实际实物）** | R1 预留（staging 内容+R1 段 DB 页增长 Δpages×P+journal_headroom(T-R1)）→S3/S4 转实际→R2 追加（**publish 副本另扣**+R2/P2 段 Δpages×P+journal_headroom(T-R2)+journal_headroom(T-P2)）→P2 转实际；失败=释放未实际使用的预留、已写实物继续按实际占额；崩溃=锁内结算（实物在→转实际；无实物→空预留解除；已发布 blob→占用按唯一物理键结算）；**不变量 Σ(实际占用)+Σ(未结算有效预留) ≤ cap，每段入口检查**（盘点面=metadata.sqlite3/journal 与热 journal/锁/staging/publish 临时/最终 blob/quarantine/声明辅助文件——§7.3 配置面；**DB 物理页数硬限 M=floor(本行值÷P) 由 max_page_count 施加**，SQLITE_FULL→CAPACITY_EXCEEDED 稳定拒绝） | `CAPACITY_EXCEEDED` |
 | 6 | `max_logical_artifacts` 逻辑 Artifact 总数（**新增**） | root 跨进程 | 10,000 | [1, 1,000,000] | 1,000,000 | 身份键 `(tenant_id, artifact_id)` 计 | R2 预留事务预留（P2 将 insert artifacts 行）；P2 提交=占用；失败/崩溃=无 artifacts 行即不占用（预留释放）；同 handle 幂等重试不重复计数；新 stage 不是免费重试 | `CAPACITY_EXCEEDED` |
 | 7 | `max_live_staging` live staging/seal attempt 数 | root 跨进程 | 256 | [1, 10,000] | 10,000 | **`seal_attempts` 行 state ∈ {RESERVED, STAGING}（R66F-02 扩：RESERVED 也占 live 名额——新 stage 不是免费重试）** | R1 预留事务 INSERT RESERVED 行即占 live 名额；P2 提交 state→SEALED **释放 live 名额**（attempt 行仍占行 10 记录额度、留存 staging/blob 文件仍占行 4/5——live 名额与磁盘/记录占用不混算）；失败=预留字段清零（未用部分）但**行保留**（state ∈ {RESERVED, STAGING} 继续占 live 名额，无删除授权不释放）；崩溃=锁内结算（空预留解除只清预留字段，不释放 live 名额、不删行） | `CAPACITY_EXCEEDED` |
 | 8 | `max_concurrent_seals` 并发 seal 数 | root 跨进程 | 8 | [1, 64] | 64 | 临界区并发持有者 | 获取临界区时检查；等待超时=稳定失败零提交；崩溃=OS 文件锁随进程终止自动释放（不悬挂） | `CONCURRENCY_LIMIT_EXCEEDED` |
-| 9 | `max_metadata_record_bytes` metadata 单条记录上界（**新增**） | 进程内不变量 | 8 KiB | 固定 | 8 KiB | 单行+envelope_wire 合计 | 构造时校验；超限拒绝封存（字段全有界，正常不可达）；metadata 增量=计划写入行字节合计（envelope_wire 受本行约束，R66F-02 入预留计算） | `INTERNAL_STORAGE_ERROR` |
-| 10 | `max_metadata_records` metadata 记录总数上界（**新增**：**artifacts+seal_attempts**——R66F-02 诊断行取消，计数单位不再含诊断行） | root 跨进程 | 100,000 | [10,000, 1,000,000] | 1,000,000 | metadata 行（artifacts+seal_attempts） | R1 预留事务 +1（seal_attempts RESERVED 行）+账本行增长；P2 提交 +1（artifacts 行）；幂等重试不新增行；失败/崩溃残留行计额（结算不删行——行保留为记录） | `CAPACITY_EXCEEDED` |
+| 9 | `max_metadata_record_bytes` metadata 单条记录上界（**新增**） | 进程内不变量 | 8 KiB | 固定 | 8 KiB | 单行+envelope_wire 合计（**逻辑校验界，非计费单位——R66S-01：DB 物理增长按页计行 5，row bytes 不入物理账**） | 构造时校验；超限拒绝封存（字段全有界，正常不可达）；每行溢出页 ≤2（page_size 4096 下 8 KiB 记录叶页+≤2 溢出页，RC-P1 实测单 8 KiB INSERT 增长 2 页复核） | `INTERNAL_STORAGE_ERROR` |
+| 10 | `max_metadata_records` metadata 记录总数上界（**新增**：**artifacts+seal_attempts**——R66F-02 诊断行取消；**R66S-02：组成不变——零新表/零新记录载体，在途登记复用 seal_attempts.blob_id 列，无新增私有记录可藏账**） | root 跨进程 | 100,000 | [10,000, 1,000,000] | 1,000,000 | metadata 行（artifacts+seal_attempts） | R1 预留事务 +1（seal_attempts RESERVED 行）+账本行增长；P2 提交 +1（artifacts 行）；幂等重试不新增行；失败/崩溃残留行计额（结算不删行——行保留为记录） | `CAPACITY_EXCEEDED` |
 | 11 | `max_quarantine_items` 诊断与隔离残留计数（**新增**） | root 跨进程 | 1,000 | [1, 100,000] | 100,000 | quarantine 目录下的文件系统条目 | 残留恒计额（无删除授权仍占额）；inspect 隔离移动满额时拒绝执行、诊断报告照常输出 | `CAPACITY_EXCEEDED` |
-| 12 | `max_auxiliary_bytes` 辅助文件预算（**新增**：DELETE journal 峰值+锁文件） | root 跨进程 | 4 MiB | [64 KiB, 64 MiB] | 64 MiB | journal+锁文件字节 | **journal 余量按保守公式预留（R66F-02 冻结公式，替换「单行小⇒journal 恒不超限」推导）：`journal_headroom(T)=4096×(T 计划脏行数+2)+16,384` 字节（P=4096=SQLite 默认页大小，实现以 `PRAGMA page_size` 实读为准；(N+2) 覆盖索引/页分裂/账本多行放大；+16 KiB 覆盖 journal 头与页开销）——R1/R2 段分别按各自计划脏行数入账（R2 段含其预留的 P2 事务）；事务结束 journal 文件即删（DELETE 模式），余量属未用预留即时释放；hot journal 残留计额至下次打开回滚；锁文件恒 0 字节；计入行 5；辅助文件余量不足 → CAPACITY_EXCEEDED 先拒绝（合法较小 auxiliary cap 场景按同一公式判定，不为通过演示放大公式或 cap）** | `CAPACITY_EXCEEDED` |
+| 12 | `max_auxiliary_bytes` 辅助文件预算（**新增**：DELETE journal 峰值+锁文件） | root 跨进程 | 4 MiB | [64 KiB, 64 MiB] | 64 MiB | journal+锁文件字节 | **journal 余量按 §7.3 页级公式预留（R66S-01 取代行数公式）：`journal_headroom(T)=(K_T+2)×(P+S)+2×S` 字节（P=page_size 实读〔初始化固定 4096、open 实读验证〕；S=512 B/页〔RC-P1 探针冻结：本机实测 journal=512+K×4,104、每页开销 8 B，冻结值含扇区对齐与平台余量〕；K_T=§7.3 九形状目录派生单值——T-R1/T-S4/T-R2/T-fail/T-reopen=25、T-P2=45、T-init=69；五条适用前提与推翻义务见 §7.3）——R1/R2 段分别按各自形状入账（R2 段含其预留的 P2 事务：headroom(T-R2)+headroom(T-P2)）；事务结束 journal 文件即删（DELETE 模式），余量属未用预留即时释放；**hot journal 残留计额至回滚（RC-P1 实测：重开读路径已回滚数据，journal 文件迟至下一次写事务才被删除——存在期按实际字节计入本行与行 5）**；锁文件恒 0 字节；计入行 5；辅助文件余量不足 → CAPACITY_EXCEEDED 先拒绝（合法较小 auxiliary cap 场景按同一公式判定，不为通过演示放大公式或 cap——cap 64 KiB 时 R1 即拒，§7.1f 例⑦）** | `CAPACITY_EXCEEDED` |
 | 13 | `max_read_bytes_per_get` 单次 get 读放大 | 进程内 | = `max_sealed_bytes`+`max_envelope_bytes` | 随前两者 | 同左 | 单次 get 读取字节 | 读取硬限：实际 size 超界先由 G5 size 校验拒绝，**永不读入超界字节** | `BLOB_SIZE_MISMATCH`（size 前置拒绝） |
 
 新增限额理由（有限、不为演示提高额度）：行 6（逻辑计数与物理计数分开是 R66-05 要求——同内容
@@ -733,13 +820,15 @@ dedup 与空日志照样消耗逻辑额度）；行 9/10（metadata 每条/总�
 行 11 计数单位为 quarantine 目录下的文件系统条目；跨维度（如行 4 对象数与行 5 字节、
 行 6 逻辑身份与行 4 物理对象）按各自单位独立计，不属双计。
 
-**计数语义（7.1b，冻结；D1F 增 RESERVED 说明）**：唯一物理 blob（行 4，内容寻址去重后）/ 逻辑
-Artifact（行 6，身份键计）/ staging-seal attempt（行 7/10；attempt 生命周期
-RESERVED→STAGING→SEALED，行 7 live 名额只看前两态）/ 诊断隔离残留（行 11）**分开计数**；
-同内容 dedup 与 0 字节日志照样消耗逻辑对象/记录额度；同 handle 幂等重试不重复生成 Artifact、
-不新增 attempt 行；**新 stage 不是免费重试**（消耗 attempt/逻辑额度——R1 预留事务 INSERT
-RESERVED 即占行 7 live 名额）。更严 policy 只收紧行 1/2 的每次调用上限，不构成另一个
-root 配额。
+**计数语义（7.1b，冻结；D1F 增 RESERVED 说明；v2.2 增 R66S-02 物理键口径）**：唯一物理 blob
+（行 4——**物理身份键 `(tenant_storage_key, content_digest)` 去重：跨 attempt/Artifact 共享同一
+物理键只计一个 blob，内容字节同样只计一次**）/ 逻辑 Artifact（行 6，身份键 `(tenant_id,
+artifact_id)` 计——同字节 ≠ 同身份，dedup 不合并逻辑身份）/ staging-seal attempt（行 7/10；
+attempt 生命周期 RESERVED→STAGING→SEALED，行 7 live 名额只看前两态）/ 各自 staging 文件（行 5，
+按文件计——不经 dedup 合并）/ 诊断隔离残留（行 11）**分开计数**；同内容 dedup 与 0 字节日志
+照样消耗逻辑对象/记录额度；同 handle 幂等重试不重复生成 Artifact、不新增 attempt 行；**新 stage
+不是免费重试**（消耗 attempt/逻辑额度——R1 预留事务 INSERT RESERVED 即占行 7 live 名额）。更严
+policy 只收紧行 1/2 的每次调用上限，不构成另一个 root 配额。
 
 **作用域与配置绑定（7.1c，冻结）**：行 4–8、10–12（root 跨进程作用域）跨实例/跨进程共享同一账本；
 **同 root 存储限制配置绑定一致**——`artifact_store_meta` 记录 `ArtifactStoreLimits` 全字段的
@@ -771,14 +860,25 @@ canonical 指纹（`compute_content_digest` 规则实算），`open()` 发现与
   ledger=0/physical=1 不再可达，§7.1f 例③）；**每段入口不变量 Σ(实际占用)+Σ(未结算有效
   预留) ≤ cap**（行 5 双口径盘点）；保守预留超过剩余额度 → 先拒绝（`CAPACITY_EXCEEDED`，
   零提交），不追求完全利用率、不提高 cap 使演示通过。
-- **崩溃/重开结算（有界恢复，锁内先结算后写）**：open/下一写在同 root 锁内**先结算后写**——
-  枚举 `seal_attempts` 非终态行（state ∈ {RESERVED, STAGING} 或预留字段非空；枚举有界=既有
-  行 7/10 记录限定，不做全目录无限扫描），逐行在授权物理范围（`staging/<staging_id>/`、
-  `blobs/<tenant_storage_key>/`〔按行记录 digest 派生路径〕、blob 同目录 publish 临时文件、
-  `quarantine/`）内核对实物：staging 文件在 → 按实际字节转实际占用；无任何实物 → 空预留解除
-  （预留清零；行保留为记录，不得借此删掉仍有实物的占用）；orphan blob（blob 在、无 artifacts
-  行）→ 按实际字节转实际占用；结算完成后才允许继续写。**超出授权扫描范围或发现未知实物 →
-  fail-closed**（`METADATA_CORRUPT` 语义面，拒绝继续写；不跳过不计——P10 观察）。
+- **崩溃/重开结算（有界恢复，锁内先结算后写；v2.2 按 R66S-02 唯一物理键对账改写）**：
+  open/下一写在同 root 锁内**先结算后写**——枚举 `seal_attempts` 非终态行（state ∈
+  {RESERVED, STAGING} 或预留字段非空；枚举有界=既有行 7/10 记录限定，不做全目录无限扫描），
+  逐行在授权物理范围（`staging/<staging_id>/`、`blobs/<tenant_storage_key>/`〔按行记录 digest
+  派生路径〕、blob 同目录 publish 临时文件、`quarantine/`）内核对实物：staging 文件在 →
+  按实际字节转实际占用；无任何实物 → 空预留解除（预留清零；行保留为记录，不得借此删掉仍有
+  实物的占用）；**对象/字节账按唯一物理键集合 U 对账（R66S-02 规则 3）：对授权 blob 物理范围
+  枚举 U（内容寻址布局天然一键一文件；**同键第二文件或布局外实物 → fail-closed
+  `METADATA_CORRUPT`，不跳过不计**）；orphan 判定查询该物理键是否被**任何有效 SEALED Artifact
+  （artifacts 行 state=SEALED ∧ content_digest=d）或已登记在途 owner（seal_attempts 非终态行 ∧
+  blob_id 非空——R2 提交时写入）引用**，不按「当前 attempt 是否有自己的 artifacts 行」判定
+  〔原 per-attempt 规则的反例——A SEALED+B idle STAGING 同 digest → 对象账 1→2——保留为回归
+  反例并标注「原协议模型反例，非产品实测」，§7.1f〕；已登记共享 blob 不改状态、不搬走、不重复
+  收费；账本 hold（actual+reserved）< |U| 的差额=真正新 orphan **首次按唯一物理键入账**（每键
+  +1 对象+其实际字节）；hold ≥ |U| → no-op（**保守不减**——已入账 orphan/被外部删除残留继续
+  占额）；后续多个同 digest 行与重复结算 no-op；**引用判定与对账结论必须一致，不一致
+  fail-closed**；恢复先结算后写，多次 open/settle 不能创造容量占用**；结算完成后才允许继续写。
+  **超出授权扫描范围或发现未知实物 → fail-closed**（`METADATA_CORRUPT` 语义面，拒绝继续写；
+  不跳过不计——P10/RC-P4 观察）。
 - 进程崩溃后不丢账（预留先于文件 IO 已持久化）、不永久占锁（OS 文件锁随进程终止自动释放，
   §7.1d 原句不变）；DELETE hot journal 回滚（§7.3）先于结算、同在临界区内；初始建表/open
   在既有声明边界内；临界区有限等待超时 → `CONCURRENCY_LIMIT_EXCEEDED` 稳定失败（零提交）。
@@ -809,39 +909,63 @@ report_json、不回退 inline。既有 privacy/codec 限制零扩大；**不改
 | 2 | RESERVED | 非空 | staging 在（S3 写中 kill，可能部分） | 按实际字节转实际占用（预留清零）；staging 文件保留不删 | 行 5 +staging 实际字节；行 7 +1、行 10 +1 |
 | 3 | RESERVED | 非空 | orphan blob 在 | **不可达**（blob 发布仅在 R2 之后，而 R2 前 state 已转 STAGING） | — |
 | 4 | STAGING | 非空 | staging 在（R2 提交后 P1 前 kill，或 publish 临时文件写中） | staging 实际占用已计（S3 转换）；publish 临时文件按实际占额；未用预留清零 | 行 5 实际字节合计；行 7 +1、行 10 +1 |
-| 5 | STAGING | 非空 | staging+orphan blob 在（P1 后 P2 失败/kill） | orphan blob 按实际字节/对象转实际占用（**不释放——消解 ledger=0/physical=1 反例**）；未用预留清零 | 行 4 +1、行 5 实际字节合计；行 7 +1、行 10 +1 |
+| 5 | STAGING | 非空 | staging+已发布 blob 在（P1 后 P2 失败/kill） | **物理键已被本行 blob_id 在途登记（R2）→ 按引用判定非误判 orphan：不搬走、不重复收费；R2 预留按实际转占用（对象按唯一物理键首计、字节=实际——不释放，消解 ledger=0/physical=1 反例；per-attempt 误判〔对象 1→2〕不可达——原负例保留为回归反例）**；未用预留清零 | 行 4 +1（唯一物理键首计）、行 5 实际字节合计；行 7 +1、行 10 +1 |
 | 6 | STAGING | 非空 | 无任何实物（外部删除 staging 后 kill 于 R2–P2 窗口） | 空预留解除（预留清零）；行保留 | 行 7 +1、行 10 +1；后续 seal 重核 → BLOB_MISSING（四态映射） |
 | 7 | STAGING | 空 | staging 在（idle staging：stage 完成未 seal） | 实际占用已计、无预留——结算 no-op | 不变（行 4/5/7/10 按实际） |
 | 8 | STAGING | 空 | 无（外部删除） | 无预留可解除；行保留 | 行 7 +1、行 10 +1；seal 重核 → BLOB_MISSING |
 | 9 | SEALED | 非空 | 任意 | **不可达**（P2 commit 同事务清零预留+转占用+state→SEALED） | — |
-| 10 | SEALED | 空 | blob 在（±staging 残留——标记可清理不自动删，残留仍计行 5） | 无未结算预留——正常终态，结算 no-op | 行 4 +1、行 5 实际字节（含 staging 残留）；**行 7 释放（live=0）**；行 10 +2 |
+| 10 | SEALED | 空 | blob 在（±staging 残留——标记可清理不自动删，残留仍计行 5） | 无未结算预留——正常终态，结算 no-op（同物理键被 SEALED 引用：U 对账 no-op） | 行 4 +1（唯一物理键；同键其他 SEALED/在途共享不重复 +1）、行 5 实际字节（含 staging 残留）；**行 7 释放（live=0）**；行 10 +2 |
 | 11 | SEALED | 空 | blob 缺失/损坏（外部） | 无预留；不改状态、不修复（fail-closed 语义归 get/幂等核验） | 同上占额；get → BLOB_MISSING/BLOB_CORRUPT |
 | 12 | 任意 | 任意 | 授权范围外/未知实物（如 root 下非授权布局文件） | **fail-closed**：`METADATA_CORRUPT` 语义面，拒绝继续写（不跳过不计） | 拒绝写直至人工处置 |
 
-**数值反例集（七例全列；三列=预留/实际/账本；示例参数：净化输出 payload=100,000 B〔⑤ 用
-262,144 B〕；R1 metadata=2,000 B〔attempt 行 1,500+账本增长 500，示意行字节合计——实现按实际
-合计同公式〕；P2 metadata=2,000 B；J(2)=32,768、J(3)=36,864、R2 段 journal=J(2)+J(3)=69,632
-〔R2 自身+其预留的 P2 事务〕；证据=**P10 SQLite+文件系统模型实测**，协议模型非产品实测）**：
+**数值反例集（七例全列；三列=预留/实际/账本；v2.2 全量按页级规约重算重写——示例参数：
+净化输出 payload=100,000 B〔⑤ 用 262,144 B〕；P=4096、S=512、K_T 与 headroom 按 §7.3 目录：
+journal_headroom(T-R1)=journal_headroom(T-S4)=journal_headroom(T-R2)=journal_headroom(T-fail)=
+journal_headroom(T-reopen)=125,440 B、journal_headroom(T-P2)=217,600 B、R2 段 journal=
+125,440+217,600=343,040 B〔含其预留的 P2 事务〕；DB 页增长预留 Δpages×P：R1 段 4 页=16,384 B、
+R2 段〔T-R2+T-P2〕2+8=10 页=40,960 B；初始 DB 文件实测 32,768 B=8 页〔RC-P3 本 DDL；P10 模型的
+28,672 B=7 页系其简化 DDL，引用不越类〕；证据=**RC-P1/RC-P3 真实 SQLite+文件系统实测**，协议
+模型非产品实测）**：
 
 | 例 | 场景 | 预留（有效未结算） | 实际（已落账/盘点） | 账本与结算后状态 |
 |---|---|---|---|---|
-| ① | R1 提交后未写即 kill | 132,768（内容 100,000+meta 2,000+journal 32,768） | 内容 0（仅 DB 行） | 结算=空预留解除（预留清零，行保留 RESERVED 占行 7/10）；内容/对象额度归零；账本=实际盘点（不丢账） |
-| ② | staging 后 kill（S3/S4 完成事务已提交） | 0 | staging 100,000+DB 2,000 | 结算 no-op（S3 完成事务已转实际）；行 7 +1 |
-| ③ | P1 后 P2 失败/kill | 未用部分（meta 2,000+journal 69,632）→ 失败释放 | staging 100,000+blob 100,000=200,000；对象 1 | **orphan 继续占额：对象账 1=实物 1、字节账 200,000=实物 200,000——ledger=0/physical=1 旧规则反例不再可达**（旧规则对照：失败释放预留 ⇒ 0<1 漏账）；行 7 +1 |
-| ③b | P1 rename 后、记账事务前 kill（补充态） | publish 预留 100,000+meta+journal | blob 100,000 未入账 | 锁内结算 orphan→实际：对象 +1、字节账=实物；不漏账（状态表行 5 同构） |
-| ④ | P2 commit 后、返回前 kill | 0 | staging 100,000+blob 100,000+DB 4,000 | 终态 SEALED：**行 7 live 名额释放（live=0）、记录 +2、对象 1**；行 4/5/10 占额保留；get/幂等 seal 正常（幂等需过 blob 核验+expected 两关） |
-| ⑤ | 临时副本余量不足（payload 262,144 B） | R2 需 333,776（publish 副本 262,144+meta 2,000+journal 69,632）> 剩余 300,000 | staging 262,144（实际已计） | R2 **先拒绝**（CAPACITY_EXCEEDED 零提交、零 publish IO）；**仅按 payload 预留 262,144 会错误放行**（同内容两份物理存在=至少 524,288 B 内容占用——双副本分别预留消解该反例，P10 例⑤） |
-| ⑥ | 重开后二进程争最后额度 | A 已提交预留 134,768（**已含其 DB 行 2,000——不再另计**） | 0 内容（A 的 DB 行 2,000 计在其预留内） | B 需 134,768：**Σ实际+Σ有效预留=269,536**>cap → B CAPACITY_EXCEEDED 零提交（第二连接实测可见 A 已提交预留——不因 A 尚未写文件而漏计；SF-D1F-01 勘误：与 P10 例⑥〔lhs=134,768+need=134,768〕一致；等价拆分=预留 132,768+实际 DB 2,000+B 需 134,768=269,536） |
-| ⑦ | 合法较小 auxiliary cap=65,536 B（合法域 [64 KiB,…] 内取小值） | R1 journal 32,768 ≤ 65,536 放行；R2 journal 69,632 > 65,536 | — | R2 处 CAPACITY_EXCEEDED（零 publish IO）；**同一公式判定，不为通过演示放大公式或 cap** |
+| ① | R1 提交后未写即 kill | 241,824（内容 100,000+DB 页 16,384+journal 125,440） | 内容 0（DB 文件按 st_size 实际盘点） | 结算=空预留解除（预留清零，行保留 RESERVED 占行 7/10）；内容/对象额度归零；账本=实际盘点（不丢账） |
+| ② | staging 后 kill（S3/S4 完成事务已提交） | 0 | staging 100,000+DB st_size | 结算 no-op（S3 完成事务已转实际）；行 7 +1 |
+| ③ | P1 后 P2 失败/kill | 未用部分（DB 页余量+journal 343,040）→ 失败释放 | staging 100,000+blob 100,000=200,000；对象 1 | **已发布 blob 物理键由 R2 在途登记（blob_id）→ 结算按引用判定非误判 orphan：继续按实际占额且只计一次——对象账 1=唯一物理文件 1、字节账 200,000=实物 200,000（ledger=0/physical=1 旧规则反例与 per-attempt 误判 1→2 均不可达）**；行 7 +1 |
+| ③b | P1 rename 后、记账事务前 kill（补充态） | publish 预留 100,000+DB 页+journal | blob 100,000 未入账 | 锁内结算转实际：对象 +1（唯一物理键首计）、字节账=实物；不漏账（状态表行 5 同构） |
+| ④ | P2 commit 后、返回前 kill | 0 | staging 100,000+blob 100,000+DB st_size | 终态 SEALED：**行 7 live 名额释放（live=0）、记录 +2、对象 1**；行 4/5/10 占额保留；get/幂等 seal 正常（幂等需过 blob 核验+expected 两关） |
+| ⑤ | 临时副本余量不足（payload 262,144 B，cap 剩余 300,000） | R2 需 646,144（publish 副本 262,144+DB 页 40,960+journal 343,040）> 300,000 | staging 262,144（实际已计） | R2 **先拒绝**（CAPACITY_EXCEEDED 零提交、零 publish IO）；**仅按 payload 预留 262,144 会错误放行**（同内容两份物理存在=至少 524,288 B 内容占用——双副本分别预留消解该反例） |
+| ⑥ | 重开后二进程争最后额度（cap 300,000） | A 已提交 R1 预留 241,824（**已含其 DB 行页增长**——不再另计） | 0 内容（A 的 DB 增长在预留内实现） | B 需 241,824：**Σ实际+Σ有效预留=483,648**>cap → B CAPACITY_EXCEEDED 零提交（第二连接实测可见 A 已提交预留——不因 A 尚未写文件而漏计） |
+| ⑦ | 合法较小 auxiliary cap=65,536 B（合法域 [64 KiB,…] 内取小值） | R1 journal headroom 125,440 > 65,536 | — | **R1 处 CAPACITY_EXCEEDED**（比旧行数口径更早拒绝——页级预算更保守）；零提交零文件 IO；**同一公式判定，不为通过演示放大公式或 cap** |
 
-**journal 公式数值表（同一冻结公式）**：J(1)=28,672；J(2)=32,768（R1/S3 完成/R2 事务，计划
-脏行 2）；J(3)=36,864（P2 事务，计划脏行 3）；J(4)=40,960；J(5)=45,056（P=4096 实测页大小，
-P10）。
+**页级 journal 上界数值表（§7.3 公式；K_T=目录冻结值，实测高水位=RC-P1 真实 SQLite 事务存续期
+`metadata.sqlite3-journal` stat 采样最大值）**：
+
+| 形状 | K_T | journal_headroom 上界（B） | 实测高水位（B） | 备注 |
+|---|---|---|---|---|
+| T-init | 69 | 328,192 | 512 | 新库首事务引擎免 journal 页记录（保守并集仍计页，上界不依赖该细节） |
+| T-R1 | 25 | 125,440 | 16,928 | 4 实脏页（attempt 叶+PK autoindex+state 索引+账本行页） |
+| T-S3 | 0 | 0（无 DB 事务） | — | 纯文件 IO |
+| T-S4 | 25 | 125,440 | 12,824 | 3 实脏页 |
+| T-R2 | 25 | 125,440 | 8,720 | 2 实脏页（含 blob_id 在途登记） |
+| T-P1reg | — | —（**不使用**） | — | 登记并入 R2；零新表/零新列/零新公共接口 |
+| T-P2 | 45 | 217,600 | 29,240 | 7 实脏页（artifacts 叶+溢出+两索引+attempt+state 索引+账本）；DB 增长 2 页=8,192 B |
+| T-fail | 25 | 125,440 | 8,720 | 同 T-R2 形状 |
+| T-reopen | 25 | 125,440 | 8,720 | hot-journal 回滚后逐行独立结算事务 |
+
+**共享 blob 六场景×四维度验收面（R66S-02 第 6 条；§8 参数 case 接入既有资源/恢复族）**：
+A 已 SEALED+B 未 seal（同租户同 digest）/ 两在途行同 digest / true orphan→恢复→重试 /
+成功复用 / 重复 open·settle / 物理对象上限已满仍合法复用——每场景对**唯一物理文件数 /
+物理字节 / 逻辑身份数 / 记录数**四维度分别断言（禁止只断言「没有漏计」而容忍重复计）；
+**原负例回归反例（标注「原协议模型反例，非产品实测」，is_product_test=false）**：A 已
+SEALED、B 同租户同 digest idle STAGING，原 per-attempt 结算把被 A 引用的唯一物理 blob 误判
+orphan → 对象账 **1→2**（实际唯一物理文件恒 1、内容字节重复计）——RC-P4 以旧规则对照复现
+（fail_closed=false），新规则下不可达（回归断言必含）。
 
 **更小等价实现裁定（Assignment §7.2 第 8 条）**：本规约（seal_attempts 行承载预留+逐段新增
-峰值预留+锁内有界结算）即选定**唯一**形态，不把选择权带入 D2；不建配额平台、WAL 管理池、
-分布式锁。**多进程/crash 兑现仍标设计**（D2/产品验收——P10 为协议+SQLite/文件系统模型，
-非产品实测）。
+峰值预留+锁内有界结算+**v2.2 页级 journal 上界与唯一物理键对账**）即选定**唯一**形态，不把
+选择权带入 D2；不建配额平台、WAL 管理池、分布式锁。**多进程/crash 兑现仍标设计**（D2/产品
+验收——RC-P1..P4 为真实 SQLite/文件系统模型实测，非产品实测）。
 
 ### 7.2 路径与键（条款 18；R66-03 修订）
 
@@ -873,51 +997,174 @@ P10）。
   **不声称防御同等 OS 权限的恶意本机用户**（条款 18 末句）。#58 identifier 合法域零改动、
   不新增租户注册服务。
 
-### 7.3 SQLite schema（条款 19；R66-05 修订——journal 模式单值）
+### 7.3 SQLite schema、配置面与物理预算规约（条款 19；R66-05 单值 + R66S-01 机制① 单选）
 
-- 文件：`root/metadata.sqlite3`；**`PRAGMA journal_mode=DELETE`（P&V 选定单值，2026-10-11；
-  替换 v1.0 无条件 `PRAGMA journal_mode=WAL`——Assignment §7.7 第 10 行，本 Packet §1.3 已
-  核销；不得两套可选实现并存带入 D2）**、`busy_timeout=10000`、`foreign_keys=ON`（连接纪律：
-  每操作一连接、异常回滚、finally close，参考 `TaskStore`，只读借鉴）。
-- **选择理由（Assignment §7.5 第 7 条唯一下放项的裁定）**：① 辅助文件预算单值——唯一
-  transient `metadata.sqlite3-journal` 仅事务期间存在，无持久 `-wal`/`-shm` 对、无 checkpoint
-  治理（§7.1 行 12）；② 写路径已由 §7.1d 单 root 临界区序列化，WAL 的读写并发优势非必需，
-  读者以 busy_timeout 有限等待；③ 说明书 §4 R66-05 明示「SQLite 可采用 rollback journal
-  （DELETE）降低 WAL 治理负担；若保留 WAL 必须交代并验证其边界」。
-- **验证边界（如实声明；D1F 按 R66F-02 替换 journal 推导）**：**journal 余量按保守公式预留——
-  `journal_headroom(T) = 4096 × (T 的计划脏行数 + 2) + 16,384` 字节（P=4096=SQLite 默认页大小，
-  P10 实测 `PRAGMA page_size`=4096；`(N+2)` 因子覆盖索引/页分裂/账本多行放大；+16 KiB 固定
-  余量覆盖 journal 头与页开销；metadata 增量=计划写入行字节合计，envelope_wire 受行 9 约束）。
-  8 KiB 单记录（行 9）≠ 单事务脏页/journal 峰值上界——旧「单行小⇒journal 恒不超限」推导已被
-  替换，行 12 按本公式入账（R1/R2 段分别按各自计划脏行数；R2 段含其预留的 P2 事务）**；事务中
-  崩溃留下 hot journal（`metadata.sqlite3-journal`，P10 实测：事务存续期存在、回滚后消失），
-  下次在临界区内打开时 SQLite 自动回滚后删除——**回滚先于重开结算、同在临界区内（§7.1d）**，
-  残留存续期计入行 5/12，重启后仅见「已提交」或「净回滚」两态（无第三态，D2 kill 验证义务）；
-  回滚自身 IO 失败 → fail-closed（`IO_ERROR`/`METADATA_CORRUPT` 路径），不虚造状态；DELETE
-  模式下写事务期间读者阻塞，busy_timeout 超时映射 `CONCURRENCY_LIMIT_EXCEEDED` 语义面；DELETE
-  为 SQLite 默认 journal 模式，win32/Linux 均可用、无 WAL 共享内存依赖（`-shm` 在部分网络文件
-  系统不可用的平台差异一并规避）；Windows 无目录 fsync（§7.4 声明，文件级尽力）。
+#### 7.3-a 支持的 SQLite 配置面（冻结并绑定 root metadata，不依赖本机默认）
+
+- 文件：`root/metadata.sqlite3`；**`PRAGMA page_size=4096`（P；初始化前固定，之后不可变；
+  每次 open `PRAGMA page_size` 实读验证——不符 fail-closed `METADATA_CORRUPT`）**；
+  **`PRAGMA journal_mode=DELETE`（P&V 选定单值，2026-10-11；替换 v1.0 无条件 WAL——
+  Assignment §7.7 第 10 行已核销；不得两套可选实现并存带入 D2）**；
+  **`PRAGMA auto_vacuum=NONE`（v2.2 冻结——避免 ptrmap 页进入脏页集，K_T 派生前提）**；
+  `synchronous` 不停用/不降级（**支持值=FULL**；杀进程/OS 活层面保证 journal 先于 DB 页
+  落盘——不停用 journal/synchronous 来降低占用）；`busy_timeout=10000`（既有）；
+  **`PRAGMA max_page_count=M`（v2.2 新增绑定：open 时设置、记录于 `artifact_store_meta`、
+  重开验证；M=floor(max_total_root_bytes ÷ P)——由公共行 5 派生的**内部执行参数，不是
+  第 14 个公共限额**；默认 512 MiB→131,072 页、合法域上限 64 GiB→16,777,216 页；超限
+  SQLITE_FULL → `CAPACITY_EXCEEDED` 稳定拒绝〔错误串不透传〕；RC-P2 实测：到限后重复
+  写入三次同错、他表需新页写同样拒绝、page_count 恒=M、DB st_size==M×P、拒绝发生在
+  execute 步〔协议顺序中先于任何依赖性内容文件 IO〕、读路径可用、无 journal 残留、
+  抬高 M 后写入恢复、把 M 压到当前页数以下被引擎拒绝、需超 M 页的大事务被拒且 DB
+  不增长过 M——**不存在「先越限再回滚」的空间泄漏**；页级语义如实声明：已分配页内
+  剩余空间可容纳的行仍可写〔限页不限行〕〕**。
+- **缓存/溢出边界**：`cache_size` 声明支持范围 [-65536, -2000]（KB 计）∪ [2000, 65536]
+  （页计），默认 -2000（2 MiB）；**缓存 spill 不改变 K_T**——journal 对每个不同脏页恰好
+  一条原始内容记录，spill 只影响写 DB 文件时机（RC-P1 实测 cache_size=2 强制 spill 下
+  R1 17,928/P2 30,232，均不超各自上界）。
+- **临时文件面**：本片冻结查询形状（等值/主键查找、有界枚举）不产生 sorter/temp 文件；
+  若实现引入产生临时文件的查询形状，须先修订本节给出有限上界并计入行 5 盘点面。
+- **journal 与锁文件路径及上界**：`metadata.sqlite3-journal` 仅事务存续期存在（DELETE
+  模式提交即删）；其大小上界=§7.3-c 页级公式；**不以 `journal_size_limit` 名称声称瞬时
+  硬限**——它只限事务/检查点后留存大小（可以设置但不得作为上界依据）；hot journal 残留
+  计额至回滚（RC-P1 实测：崩溃后 journal 在〔8,720 B 级〕、重开读路径已回滚数据、
+  **journal 文件迟至下一次写事务才被删除——存在期按实际字节计入行 5/12**）；锁文件
+  恒 0 字节。
+- **配置绑定（不依赖「刚好本机默认值」）**：P、M、journal 模式、auto_vacuum、
+  `tenant_storage_key_map_version`、limits 指纹全部写入 `artifact_store_meta`
+  （`cfg_page_size`/`cfg_max_page_count`/`cfg_journal_mode`/`cfg_auto_vacuum`/
+  `cfg_kv_mapping_version` 键），open 校验不一致按既有语义面拒绝
+  （`METADATA_CORRUPT`/`STORE_CONFIG_CONFLICT`）；13 维限额账本以单行
+  `quota_ledger`（canonical JSON ≤1 KiB）承载于同表（每事务账本更新恒 1 行——K_T
+  派生单值前提）。
 - 版本化：`PRAGMA user_version=1`（本片唯一版本）；初始建表在**单事务**内执行
-  `CREATE TABLE IF NOT EXISTS artifacts / seal_attempts / artifact_store_meta`（幂等、可重开；
-  模式参考 `TaskStore._init`，只读借鉴）。不建跨数据库迁移框架（FR-05 归后续片）。
-- 表结构（实现细节，D2/IMPL 可在语义列不变下微调列组织，SF-09）：语义列与唯一约束冻结——
-  `artifacts(artifact_id PK, tenant_id, task_id, workflow_id, stage_attempt_id,
-  repository_snapshot_digest, schema_name, schema_version, producer, policy_digest,
-  toolchain_digest, content_digest, blob_id, size_bytes, media_type, classification,
-  retention_class, created_at, sealed_at, state, envelope_wire TEXT)`；
-  `seal_attempts(staging_id PK, artifact_id, tenant_id, stage_attempt_id, state, created_at,
-  updated_at, blob_id, content_digest, reserved_staging_bytes, reserved_publish_bytes,
-  reserved_metadata_bytes, reserved_journal_bytes)`——**state ∈ {RESERVED, STAGING, SEALED}
-  （RESERVED/预留字段列为 R66F-02 预留载体；RESERVED 仅 attempt 生命周期内部状态，artifacts
-  表状态仍只有 STAGING/SEALED；重开结算枚举非终态行以本表 state/预留字段为据，§7.1d/§7.1f）**；
-  `artifact_store_meta(key PK, value)` 载荷至少含
-  `root_id`（64-hex，handle 外来判定）、`tenant_storage_key_map_version=1`、`limits_fingerprint`
-  （§7.1c）、限额账本行（计数）。所有查询以 `tenant_id = <store 绑定租户>` 为谓词（G3）。
-  **建表列禁止 `COLLATE NOCASE` 及任何大小写归一排序规则——一切字符串键（tenant_id/
-  artifact_id/staging_id/blob_id 等）按 BINARY 精确字节比较（SF-D1R-04 附注：逻辑租户精确
-  比较在 SQL 层可达的实现纪律前提；SQLite 默认即为 BINARY）。**
-- `envelope_wire` 存 `encode_envelope` 的 canonical JSON 文本（envelope 本身无日志正文；每条
-  记录上界=行 9）。
+  `CREATE TABLE IF NOT EXISTS …`（幂等、可重开；模式参考 `TaskStore._init`，只读借鉴）。
+  不建跨数据库迁移框架（FR-05 归后续片）。
+
+#### 7.3-b 拟用真实 DDL/索引（冻结；实现可在语义列不变下微调列组织，SF-09）
+
+```sql
+CREATE TABLE artifacts(
+  artifact_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, task_id TEXT NOT NULL,
+  workflow_id TEXT NOT NULL, stage_attempt_id TEXT NOT NULL,
+  repository_snapshot_digest TEXT NOT NULL, schema_name TEXT NOT NULL,
+  schema_version TEXT NOT NULL, producer TEXT NOT NULL, policy_digest TEXT NOT NULL,
+  toolchain_digest TEXT NOT NULL, content_digest TEXT NOT NULL, blob_id TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL, media_type TEXT NOT NULL, classification TEXT NOT NULL,
+  retention_class TEXT NOT NULL, created_at TEXT NOT NULL, sealed_at TEXT NOT NULL,
+  state TEXT NOT NULL, envelope_wire TEXT NOT NULL);
+CREATE UNIQUE INDEX idx_artifacts_tenant_artifact ON artifacts(tenant_id, artifact_id);
+CREATE TABLE seal_attempts(
+  staging_id TEXT PRIMARY KEY, artifact_id TEXT, tenant_id TEXT NOT NULL,
+  producer TEXT NOT NULL, task_id TEXT NOT NULL, workflow_id TEXT NOT NULL,
+  stage_attempt_id TEXT NOT NULL, repository_snapshot_digest TEXT NOT NULL,
+  toolchain_digest TEXT NOT NULL, stage_policy_digest TEXT NOT NULL,
+  classification TEXT NOT NULL, retention_class TEXT NOT NULL, state TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, blob_id TEXT,
+  content_digest TEXT, size_bytes INTEGER,
+  reserved_staging_bytes INTEGER NOT NULL DEFAULT 0,
+  reserved_publish_bytes INTEGER NOT NULL DEFAULT 0,
+  reserved_metadata_bytes INTEGER NOT NULL DEFAULT 0,
+  reserved_journal_bytes INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX idx_seal_attempts_state ON seal_attempts(state);
+CREATE TABLE artifact_store_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+```
+
+- 8 个 schema 对象（3 表+2 显式索引+3 隐式 PK autoindex）；**建表列禁止 `COLLATE NOCASE`
+  及任何大小写归一排序规则——一切字符串键（tenant_id/artifact_id/staging_id/blob_id 等）
+  按 BINARY 精确字节比较**（SQLite 默认即 BINARY；SF-D1R-04 附注）。
+- **`seal_attempts.blob_id` 列语义（v2.2 扩写，R66S-02）**：R2 预留事务提交时写入
+  （=staged 内容 digest）——**该值非空即物理键 `(tenant_storage_key, content_digest)`
+  的在途登记**；重开结算/对象预留判定/R66S-02 规则 2/5 均以本列+artifacts 行为据；
+  **零新表/零新列/零新公共接口；行 10 组成不变（artifacts+seal_attempts，无新增私有
+  记录可藏账）**。
+- **D2 接续私有列（v2.2 落位，Assignment §7.3-1/§11.6）**：`producer`/`task_id`/
+  `workflow_id`/`repository_snapshot_digest`/`toolchain_digest`（ProducerContext 持久
+  绑定）+`stage_policy_digest`（stage 时实际 policy_digest）+`classification`/
+  `retention_class`（manifest 分项）——R1 插入时写入，seal（含跨进程重开再 seal）一律
+  以本行持久值为准，不靠内存缓存、不回填新 producer/默认 policy（§10.1）。
+  **exact 列集以此为准（P&V 冻结，不留 D2 选择）**。
+- `envelope_wire` 存 `encode_envelope` 的 canonical JSON 文本（envelope 本身无日志正文；
+  每条记录上界=行 9——逻辑校验界，非计费单位）。
+
+#### 7.3-c 全部写事务形状目录与 K_T 派生（九形状逐项；R66S-01 B 项）
+
+**K_T 派生规则（单值）**：对事务触及的每个 btree，K_T 分量=写入行数（叶页）+写入行数
+（分裂余量——每次叶写最多引发一次分裂=1 旧页改写+1 新页）+内部路径页（深度−1，由 M
+上界最小扇出推导：M ≤ floor(64 GiB ÷ 4096)=16,777,216 页；rowid 表内部 cell ≈ 4 B 子指针
++行号 varint ⇒ 扇出 ≥ 约 400 ⇒ 深度 ≤ 4 ⇒ 余量 3；短键索引（键 ≤64 B）同 3；复合索引
+`idx_artifacts_tenant_artifact`（键 ≈ tenant_id 128+artifact_id 36+开销 ≈ 170 B）⇒ 扇出
+≥ 约 22 ⇒ 深度 ≤ 7 ⇒ 余量 6；sqlite_master 余量 3）；溢出页=每 8 KiB 记录 ≤2（RC-P1 实测
+单 8 KiB artifacts INSERT 增长 2 页复核）；**新增页并入保守并集（不依赖「新页免 journal
+记录」的引擎优化——RC-P1 实测 T-init 高水位仅 512 B 即因该优化，上界仍按含新增页计）**；
+auto_vacuum=NONE ⇒ 无 ptrmap 页；本片无 DELETE 语句 ⇒ 无 freelist 释放路径（保守不设
+freelist 余量、亦不依赖「leaf freelist 页省略」的缩小方向优化）。
+
+| # | 形状 | 写哪些表/行/索引 | 数据上限 | K_T | journal 上界（B） |
+|---|---|---|---|---|---|
+| 1 | T-init 初始化事务（单事务） | sqlite_master 8 对象（3 表+5 索引根）+8 新根页+page 1；artifact_store_meta 9 行（root_id/映射版本/limits 指纹/5 配置键/quota_ledger） | meta 值 ≤1 KiB/行（quota_ledger canonical JSON） | 69（master 8+8+3、新根 8、meta 9+9+3、meta PK 9+9+3） | 328,192 |
+| 2 | T-R1 R1 预留事务 | INSERT 1 seal_attempts 行（含 D2 接续列+预留字段）+UPDATE quota_ledger 1 行 | attempt 行全列 ≤约 1,150 B（无溢出） | 25（seal 1+1+3、seal PK autoindex 1+1+3、state 索引 1+1+3、meta 1+1+3、meta PK 1+1+3） | 125,440 |
+| 3 | T-S3 S3 有界写入段 | **零 DB 写**（纯 staging 文件 IO：O_CREAT\|O_EXCL+fsync+上限即停） | 净化输出 ≤行 2 上限 | 0（无事务、无 journal） | 0 |
+| 4 | T-S4 S3/S4 转换事务 | UPDATE 同 seal_attempts 行（RESERVED→STAGING、预留字段清零/转实际）+UPDATE quota_ledger | 同上 | 25 | 125,440 |
+| 5 | T-R2 R2 预留事务（含 blob_id 在途登记） | UPDATE 同行（发布段预留字段+blob_id+content_digest）+UPDATE quota_ledger | 同上 | 25 | 125,440 |
+| 6 | T-P1reg P1 后登记 | **不使用**（显式声明：发布后登记无独立事务——物理键在途登记已由 T-R2 提交写入；零新表/零新列/零新公共接口；说明书列出的形状逐项表态，无缺项） | — | 0（无此事务） | 0 |
+| 7 | T-P2 P2 commit 事务 | INSERT 1 artifacts 行（≤8 KiB 含 envelope_wire→叶+≤2 溢出）+其 PK autoindex+复合索引各 1 条目；UPDATE 同 seal_attempts 行（SEALED/清零）+state 索引；UPDATE quota_ledger | 行 9 ≤8 KiB | 45（artifacts 1+1+2+3、artifacts PK 1+1+3、复合索引 1+1+6、seal 5、seal PK 5、state 5、meta 5、meta PK 5） | 217,600 |
+| 8 | T-fail 失败结算事务 | UPDATE 同行（释放未用预留）+UPDATE quota_ledger | 同上 | 25 | 125,440 |
+| 9 | T-reopen 重开结算事务（hot-journal 回滚后） | **逐行独立事务**（每非终态行一个 T-fail 形状事务；枚举用只读查询、盘点用独立文件遍历——均不写） | 同上；行数 ≤行 7 上限 | 25（每事务） | 125,440（每事务） |
+
+R1 段 journal 预留=headroom(T-R1)；R2 段=headroom(T-R2)+headroom(T-P2)=343,040 B（含其
+预留的 P2 事务）；段末事务 journal 删除（DELETE 模式），余量属未用预留即时释放。
+
+#### 7.3-d 页级 journal 上界公式、适用前提与推翻义务（替换旧行数公式的唯一公式；R66S-01 D 项）
+
+```
+journal_headroom(T) = (K_T + 2) × (P + S) + 2 × S   字节
+```
+
+- **K_T** = 事务 T 计划改写的不同 DB 页数上界（含计划新增页保守并集）；由 §7.3-b 真实
+  DDL 按 §7.3-c 规则派生，逐形状单值（九形状表）。
+- **P** = page_size（初始化固定 4096、open 实读验证——§7.3-a）。
+- **S** = 每页 journal 记录开销与扇区对齐余量（页号 4 B/页+每页校验和+整扇区整组写入
+  对齐+journal 头独立扇区）——**冻结 S=512 B/页**。定值依据（RC-P1 探针，真实 SQLite
+  3.45.3/win32）：单页行校准表事务更新 k∈{1,2,4,8,16,32} 页，线性拟合 slope=4,104.0、
+  intercept=512.0（即 journal=512+K×4,104，每页开销 8 B——与第三轮审核反例同式吻合：
+  66,176=512+16×4,104、99,008=512+24×4,104）；冻结取 Assignment 预期 ≤512 量级上限以
+  覆盖扇区对齐批写与平台差异（一次小库观测只是样本；Linux D2 复测义务保留）。
+- **+2 页/+2S** = journal 头（独立扇区）与 commit 记录/对齐余量。
+- **官方机制依据**（sqlite.org/atomiccommit.html，Packet 内引用）：journal 在修改任何
+  DB 页之前写入该页**原始内容**；页号随每页记录存储；同扇区页整组写入；journal 头独立
+  扇区；页计数从 0 改为真实值即提交点；提交=journal 删除；leaf freelist 页省略是**缩小**
+  方向不影响上界 ⇒ journal 大小 ∝ 事务改写的**不同页数**而非行数——这正是实测反例的
+  机理（8 行→16 页+640 B、12 行→24 页+704 B，与页记录机制一致；该实测构成对行数公式的
+  反例、同时与页级机制相容）。
+- **适用前提（五条，全部满足才可用本公式）**：① 事务形状限定于 §7.3-c 目录冻结形状
+  （每类脏行/行字节/索引/btree 深度有界；**同事务多表混写等非冻结形状不在此上界内——
+  RC-P1 记录其对照测量 33,344 B ≤ ΣK=70 上界，产品不得采用**）；② 配置面 §7.3-a 全部
+  绑定验证（P/模式/auto_vacuum/M/synchronous）；③ 单写临界区序列化（§7.1d 既有），无
+  并发写事务 journal 叠加；④ K_T 派生含溢出/分裂/新增页保守并集；⑤ P/S 实读或探针
+  冻结值。
+- **可反驳性（强制）**：P&V 已用真实 DDL 压力探针**尝试推翻**该上界（RC-P1 八项：边界
+  行字节 8 KiB/最大 K_T 形状/分裂风暴 3,000 随机键/小 cache spill/DB 近 M 页/小 cap/
+  写后回滚/真崩溃热 journal——全部未推翻，实测高水位均 ≤ 上界）；**任一实测 > 派生上界
+  ⇒ 前提失效，触发 Assignment §12 停点（回 Coordinator 重裁定，不得自行放大系数或换
+  公式再 READY）**。ER 将独立重复推翻尝试（Assignment §1 后续角色链②）。
+- R1/R2 段按各自事务形状的 K_T 分别入账（R2 段含其预留的 P2 事务）；事务结束 journal
+  删除（DELETE 模式），余量属未用预留即时释放；hot journal 残留计额至回滚（含「文件
+  迟至下一次写事务才删除」的存在期，RC-P1 实测）；锁文件恒 0 字节；计入行 5/12；辅助
+  文件余量不足 → `CAPACITY_EXCEEDED` 先拒绝（合法较小 auxiliary cap 同一公式判定，不为
+  通过演示放大公式或 cap——§7.1f 例⑦）。
+- **旧公式撤销声明**：`4096×(计划脏行数+2)+16384` 及其一切行数口径变体不再作为 journal
+  上界；其示例值（`J(1)=28,672…J(5)=45,056`、`69,632`、`333,776`、`269,536`、`134,768`）
+  已按 RC Assignment §11.7 例值处置裁定选定「重算重写」全文替换（历史登记处标注「被取代」）——不是乘二、不是
+  换一组示例、不是只验证算术。
+
+#### 7.3-e 验证边界（如实声明；D2/产品义务）
+
+真实多进程/kill/双平台验证归 D2/产品阶段（本版不报产品已通过）；P6 Linux 存储路径
+缺口保持；RC-P1..P4 为 win32 单机样本（真实 SQLite 引擎+真实文件系统，协议模型驱动），
+PASS ≠ 产品正确；页级上界只在 §7.3-d 五条前提下成立；DELETE 模式下写事务期间读者阻塞、
+busy_timeout 超时映射 `CONCURRENCY_LIMIT_EXCEEDED` 语义面；Windows 无目录 fsync
+（§7.4 声明，文件级尽力）；回滚自身 IO 失败 → fail-closed（`IO_ERROR`/`METADATA_CORRUPT`
+路径），不虚造状态；重启后仅见「已提交」或「净回滚」两态（无第三态，D2 kill 验证义务）。
 
 ### 7.4 崩溃/重启验证与平台分层声明（条款 20）
 
@@ -941,8 +1188,9 @@ P&V 默认预算 35 的理由：D1R 六项修正各自新增行为面（输出�
 限额计额与配置冲突、六字段绑定、回执/读结果分型）需要对应反例；按行为覆盖收敛，未删减任何
 安全断言，不靠重复方法刷计数；D2 冻结时各组最小数不得降低。**D1F（R66F-01/02/03）：44 最低数
 不变——新分支（expected 全组合、四态映射重核、预留-结算七例、真实构造触发面）一律以参数 case
-接入既有方法族，不刷数、不降数（Assignment §11.13）**）。探针/本表 PASS 均不构成产品
-实现证据。
+接入既有方法族，不刷数、不降数（Assignment §11.13）**）。**RC（R66S-01/02）：44 最低数不变——页级上界/整 root 盘点/共享
+blob 六场景四维度一律以参数 case 接入既有资源/恢复族，不刷数、不降数（RC Assignment
+§11.8）**）。探针/本表 PASS 均不构成产品实现证据。
 
 | 组（说明书 §7/D2 覆盖组） | 方法族 | 最小数 | 必含反例 |
 |---|---|---|---|
@@ -951,7 +1199,7 @@ P&V 默认预算 35 的理由：D1R 六项修正各自新增行为面（输出�
 | 权限与输入 | 错租户（== NOT_FOUND 不可区分）；**六字段 ref 逐项校验（合法格式但错误 repository_snapshot_digest/content_digest → ARTIFACT_NOT_FOUND，R66-06②）**；**错 schema 触发面=实际可传入对象（R66F-03）：错误 schema_name 的合法 Reference、4.1 的合法 Reference → UNSUPPORTED_SCHEMA；非 Reference 对象（dict 等）→ INVALID_ARGUMENT——不期待未调用的函数捕获构造期异常（P11 真实触发面）**；**seal ⓪ 参数形状：非法 expected 格式（大写/短/非 hex/int）与非 StagedLogHandle/非法 declared_state → INVALID_ARGUMENT 零副作用、先于 ①–⑤（R66F-01，参数 case）**；非空 lineage/supersedes（stage 与 envelope helper 双入口）；未封送 id；缺失/损坏 blob 拒绝；**外来 root/tenant handle 拒绝（STAGING_STATE_INVALID）**；**handle 状态判定反例：declared=sealed + 权威行 STAGING → STAGING_STATE_INVALID（CR-D1R-01④）；权威行 RESERVED × declared=staged / declared=sealed 两组合 → 同归 STAGING_STATE_INVALID（CR-D1F-01 补裁，参数 case 接入；16 状态谓词模型原 ①–⑤ 枚举不含 RESERVED 组合，本两组合为其扩展）**；拒绝不泄露他租户 | 7 | 伪造 ref / 篡改 wire digest / 合法格式错误 digest |
 | 不可变与重试 | 同 handle 重复 seal 幂等（**含跨进程重开 handle、P2 后崩溃重试**）；**expected 参数 case 全组合 × 幂等/重开（R66F-01，参数 case 接入）：None/匹配/合法错值〔64-hex 但非本内容〕/非法格式 × 正常分支/SEALED 幂等分支/新进程重开重试——SEALED+错 expected → SEAL_DIGEST_MISMATCH 且原状态不动（不返回回执、不覆盖 blob/metadata）**；**declared=staged + 权威行 SEALED 重试 → 同一回执（blob 核验+expected 两关通过后，CR-D1R-01③）**；**幂等成功仍核验实物：SEALED 后实物损坏 → 重复 seal 稳定失败非假幂等（R66-02）**；**同长度坏旧 blob + 合法新 staging → 复用前核验拒绝（零覆盖、零新增 SEALED、原字节不动）**；**竞态分支核验（目标在核验与发布间出现）**；并发 seal（线程/进程）单胜者且不覆盖已存在有效对象；同字节不同 staging → 不同 artifact_id 同 blob；METADATA_CONFLICT 不覆盖 | 7 | 并发窗口内无双重提交；坏复用零副作用 |
 | 故障与恢复 | 真子进程 kill 于 **R1 后〔R66F-02 新增〕**/S3 后/P1 前/P1 后/P2 前/P2 后六点（两平台）；**重开结算断言（R66F-02）：先结算后写、结算后账本 ≥ 实际盘点（orphan 转实际占用不漏账、空预留解除、行保留占行 7/10、未知实物 fail-closed）**；**stage 后 staging 被改坏（截断/篡改/删除/替换为链接或目录）→ seal 重核按四态映射拒绝（PATH_POLICY_VIOLATION/BLOB_MISSING/BLOB_SIZE_MISMATCH/BLOB_CORRUPT，次序 lstat→size→digest）、零发布零新增 SEALED、expected 比较不掩盖实物错误（R66F-01）**；重启诊断分类正确；**P2 中 kill → DELETE hot journal 回滚两态**；部分/缺失内容不作为成功返回；**close 不破坏重试（close 后重开+原 handle 幂等）** | 6 | 无假 SEALED 断言 |
-| 资源与路径 | 0-byte、Unicode 字节边界（单 emoji/多字节）、输入超限、**净化输出超限（膨胀反例 262,119 B 输入→365,378 B 输出 → SEALED_BUDGET_EXCEEDED、零内容写入、零持久诊断行、staging 目录为空、稳定失败无降级，R66-04/02）**、**更严格 policy 交集收紧（注入更严 policy 触发失败）**、**限额计额（重复同内容/空内容仍消耗逻辑额度；失败/崩溃残留计额；两真实进程争最后一个额度不超限〔按「实际+有效预留」双口径，预留提交即计——P10 例⑥〕；同 root limits 不一致 → STORE_CONFIG_CONFLICT；**R66F-02 预留-结算参数 case（接入本族）：R1/R2 保守预留先拒绝 CAPACITY_EXCEEDED 零提交零文件 IO、publish 副本另扣（262,144 B 内容剩余 300,000 B 时 R2 需 333,776 B 先拒绝——524,288B 双副本反例消解）、合法较小 auxiliary cap 64 KiB 同公式拒绝、journal 公式数值核对（J(2)=32,768/J(3)=36,864）、行 7 RESERVED 占 live 名额、P2 后 live 释放而行 4/5/10 保留**；inspect 扫描有界）**、**两平台租户键（Windows `Tenant-A`/`tenant-a`、`tenant-end`/`tenant-end.` 独立物理目录互不混叠；合法标识含冒号/保留名租户正常封存；Linux 不同逻辑租户同内容独立存放；逻辑层 SQL/Reference/ACL 仍区分大小写与尾点，R66-03）**、路径穿越/symlink/junction/reparse 拒绝、满盘/权限（模拟注入） | 9 | 空对象不绕对象数；失败不变空成功 |
+| 资源与路径 | 0-byte、Unicode 字节边界（单 emoji/多字节）、输入超限、**净化输出超限（膨胀反例 262,119 B 输入→365,378 B 输出 → SEALED_BUDGET_EXCEEDED、零内容写入、零持久诊断行、staging 目录为空、稳定失败无降级，R66-04/02）**、**更严格 policy 交集收紧（注入更严 policy 触发失败）**、**限额计额（重复同内容/空内容仍消耗逻辑额度；失败/崩溃残留计额；两真实进程争最后一个额度不超限〔按「实际+有效预留」双口径，预留提交即计——RC-P3 序列复现〕；同 root limits 不一致 → STORE_CONFIG_CONFLICT；**预留-结算参数 case（接入本族）：R1/R2 保守预留先拒绝 CAPACITY_EXCEEDED 零提交零文件 IO、publish 副本另扣（262,144 B 内容剩余 300,000 B 时 R2 需 646,144 B 先拒绝——524,288B 双副本反例消解）、合法较小 auxiliary cap 64 KiB 同公式拒绝（R1 即拒）、行 7 RESERVED 占 live 名额、P2 后 live 释放而行 4/5/10 保留；**R66S-01 参数 case（接入本族）：页级上界数值核对（各形状实测事务内 journal 高水位 ≤ (K_T+2)×(P+S)+2×S——K_T/S/P 按 §7.3 冻结值）、`PRAGMA page_size`/`max_page_count` open 实读与绑定校验、M 派生=floor(行5÷P)、到限（SQLITE_FULL→CAPACITY_EXCEEDED）稳定拒绝且先于依赖性内容 IO、DB st_size==page_count×P、初始化即计入 DB 文件字节（≠行字节示意）、预留事务自身/失败/恢复/hot-journal 回滚均在声明预算内、非法配置（page_size/auto_vacuum/journal 模式漂移）open 拒绝；R66S-02 六场景四维度参数 case（接入本族）：A 已 SEALED+B 未 seal/两在途行同 digest/true orphan→恢复→重试/成功复用/重复 open·settle/对象上限满仍合法复用——对唯一物理文件数/物理字节/逻辑身份数/记录数四维度分别断言（禁止只断「无漏计」），原 per-attempt 负例（对象账 1→2）作为回归反例断言不可达（标注「原协议模型反例，非产品实测」）**；inspect 扫描有界）**、**两平台租户键（Windows `Tenant-A`/`tenant-a`、`tenant-end`/`tenant-end.` 独立物理目录互不混叠；合法标识含冒号/保留名租户正常封存；Linux 不同逻辑租户同内容独立存放；逻辑层 SQL/Reference/ACL 仍区分大小写与尾点，R66-03）**、路径穿越/symlink/junction/reparse 拒绝、满盘/权限（模拟注入） | 9 | 空对象不绕对象数；失败不变空成功 |
 | 持久化边界 | SQLite 无日志正文/凭据（全库扫描）；metadata/ref 有界（行 9）；store 不可用无 inline/旧 report_json 降级；contracts/privacy 既有测试回归 + #60 面零触碰 | 4 | 契约兼容（import 面/wire 面） |
 
 **独立 Oracle 要求**（D2 交付，禁止复用被测实现路径）：
@@ -963,10 +1211,21 @@ P&V 默认预算 35 的理由：D1R 六项修正各自新增行为面（输出�
 5. **限额独立盘点（R66-05）**：独立文件系统遍历 + SQLite 只读查询重算对象数/字节数，与账本行
    比对（不经 store 计数接口）；
 6. **物理键独立性（R66-03）**：独立计算 `SHA256(tenant_id)` 键并断言目录互不混叠（不经 store）；
-7. **预留-结算独立盘点（R66F-02，D1F 新增）**：独立遍历授权物理范围（staging//blobs//publish
-   临时/quarantine/）+ 只读查询 seal_attempts 非终态行与预留字段，重算「Σ实际+Σ有效预留」双
-   口径并与账本比对（不经 store 计数/结算接口）；kill 后断言**结算后账本 ≥ 实际盘点**（orphan
-   不漏账——审核反例 ledger=0/physical=1 不再可达的负例断言）。
+7. **预留-结算独立盘点（R66F-02，D1F 新增；v2.2 扩 R66S-01/02 口径）**：独立遍历授权物理范围
+   （staging//blobs//publish 临时/quarantine/）+ 只读查询 seal_attempts 非终态行与预留字段，
+   重算「Σ实际+Σ有效预留」双口径并与账本比对（不经 store 计数/结算接口）；kill 后断言
+   **结算后账本 ≥ 实际盘点**（orphan 不漏账——审核反例 ledger=0/physical=1 不再可达的
+   负例断言）。
+8. **整 root 独立盘点 Oracle（R66S-01，RC 新增）**：独立 os.walk 整个 root（常规文件、
+   含 metadata.sqlite3/journal 与热 journal/锁/staging/publish 临时/最终 blob/quarantine
+   及声明辅助文件）按 st_size 求和，分类+合计分别与账本比对（初始化后即含 DB 文件
+   字节——P10 的 lhs=0 缺陷为负例断言）；断言 row bytes（行 9 逻辑界）与 DB bytes
+   （行 5 物理计）无双计；断言到限在内容 IO 前稳定拒绝、事务内 journal 高水位 ≤
+   §7.3-d 上界（不经 store 计数函数自证——RC-P3 方法）。
+9. **共享 blob 唯一物理键独立断言（R66S-02，RC 新增）**：独立枚举 blobs 布局的唯一物理
+   键集合 U 与独立文件计数，对六场景分别断言四维度（唯一物理文件数/物理字节/逻辑身份
+   数/记录数）无重复计、无漏计（RC-P4 方法；含「同键第二文件/布局外实物 fail-closed」
+   负例）。
 
 ## 9. Traceability
 
@@ -1096,15 +1355,35 @@ python -m lima.artifacts.demo --root <fresh tmp>
 （含 R1 后）+ 重开结算断言（先结算后写、结算后账本 ≥ 实际盘点、未知实物 fail-closed）是
 D2 冻结测试的 mandatory 组成，不是可选项；P10 协议模型 PASS 不解除该义务。
 
+**D2 接续义务预告（RC v2.2 新增，落位正文不藏在测试里；RC Assignment §7.3/说明书 §6.2）**：
+
+1. **stage 接续**：未 seal 就 `close()` / 新进程重开后再 `seal_log` 原 handle——原
+   ProducerContext（producer/task_id/workflow_id/stage_attempt_id）、
+   repository_snapshot_digest/toolchain_digest、classification/retention、**stage 时实际
+   policy_digest** 必须持久绑定并原样用于 seal。载体已冻结：`seal_attempts` 私有列
+   （§7.3-b D2 接续列集——producer 上下文 8 列+stage_policy_digest，R1 插入时写入）；
+   不靠内存缓存、不回填新 producer/默认 policy。**D2 冻结测试必须比较全部
+   Envelope/reference 绑定字段，不得只测试「先 seal 再重开 get」**。
+2. **policy 变化规则（Coordinator 依既有合同明示，本条即裁定——RC Assignment §11.6）**：
+   stage 所用 policy_digest 持久保存（同上列）；**本首片默认未封存 handle 只能在相同
+   policy_digest 下 seal**——seal 时 open 注入 policy 的实算 digest ≠ stage 持久化 digest →
+   稳定 `SANITIZATION_FAILED`（策略类，复用既有码零新增）、零新增 SEALED、不把当前
+   policy 重新冒充 stage 策略、不动 staging 实物；与 S2c 既有 policy_digest 实算比对语义
+   同族。SEALED 读取保留原 Envelope 事实与既有租户权限，不重写历史。
+3. **定性声明**：上述属既有持久 handle/真实上下文合同的实现与 D2 细化义务，不新增认证
+   产品；若与更高权威冻结 contract 冲突，提交集中 DR 而非擅改（当前无冲突）。
+
 ## 11. Decision Request 区（随 Packet 呈批）
 
-1. **DR-PACKET-1（既有呈批项，v2.1 更新表述——Assignment §9.5）**：提交点协议对 #66 原文
+1. **DR-PACKET-1（既有呈批项，v2.2 更新表述——RC Assignment §9.6）**：提交点协议对 #66 原文
    「先写临时 blob→fsync/verify→事务写 SEALED metadata→原子 rename」的处置——**R66-02 两
-   前提（既有 blob 有效复用与并发发布不覆盖）已由 v2.0 落地为三分支核验+临界区规则；本轮剩余=
-   R66F-01/02/03 收口（v2.1），处置随新 head 一并呈批，未获批前不视为已批准**。本 Packet
+   前提（既有 blob 有效复用与并发发布不覆盖）已由 v2.0 落地为三分支核验+临界区规则；
+   R66F-01/02/03 已由 v2.1 收口；本轮剩余=R66S-01/02 收口（v2.2：物理预算规约+共享 blob
+   唯一结算），处置随新 head 一并呈批，未获批前不视为已批准**。本 Packet
    采用保留全部元素、把原子 rename 前移到 metadata 事务之前的等价重排，并给出读者无
-   不完整可见窗口的证明与覆盖范围声明（§4.2；orphan 计额按 §7.1f 结算）。请 Maintainer 在
-   本 Packet v2.1 新 head 批准时一并裁定该处置（与首片范围批准为同一个合并决定）。
+   不完整可见窗口的证明与覆盖范围声明（§4.2；已发布 blob 的崩溃残留按 §7.1f 物理键在途
+   登记与 U 对账结算计额）。请 Maintainer 在本 Packet v2.2 新 head 批准时一并裁定该处置
+   （与首片范围批准为同一个合并决定）。
 2. 其余：无新增 DR。六类升 Maintainer 事项（跨租户共享/真实身份来源/删除合规/默认部署/公共
    Contract/Profile 来源身份）本轮均未触发；SQLite 内部表结构、文件组织、实现手段按 Assignment
    §11 由责任角色在批准范围内自决（R66-06 公共合同已本轮冻结，不留给 D2/Implementation）。
@@ -1113,22 +1392,29 @@ D2 冻结测试的 mandatory 组成，不是可选项；P10 协议模型 PASS �
 
 本 Packet 视为完成，当且仅当：
 1. 12 节齐备、20 条冻结项全部落地为可验证契约（§9.2 索引无空洞）、18-ID 映射表无 SATISFIED 且
-   分布不变（PARTIAL 14 / NOT-COVERED 2 / DESIGN-ONLY 2 / SATISFIED 0——**v2.1 不变，
-   Assignment §11.14**）；
-2. 六项 R66 + 三项 R66F 各有唯一合同与可复核依据（§1.2 对照表）、§1.3 十六行（D1R）+十五行
-   （D1F）替换核销完成、全文无新旧并存反义表述（含 S4+expected、诊断行、S0 额度、构造期
-   映射、行 4「失败=释放预留」旧句式——特别检索通过）、关键接口无 TBD（open/stage/seal/get
+   分布不变（PARTIAL 14 / NOT-COVERED 2 / DESIGN-ONLY 2 / SATISFIED 0——**v2.1/v2.2 不变，
+   Assignment §11.14/RC §11.8**）；
+2. 六项 R66 + 三项 R66F + 两项 R66S 各有唯一合同与可复核依据（§1.2 对照表）、§1.3 十六行
+   （D1R）+十五行（D1F）+**十七行（RC，R1–R17）**替换核销完成、全文无新旧并存反义表述
+   （含 S4+expected、诊断行、S0 额度、构造期映射、行 4「失败=释放预留」旧句式——特别检索
+   通过；**v2.2 追加检索：`4096×`、`J(N)`、`(计划脏行数+2)`、`333,776`、`269,536`、
+   `134,768`、`J(2)=`、「blob 在、无 artifacts 行」、「计划写入行字节合计」——命中处必须
+   已是历史标注〔「被取代/原协议模型反例」〕或新规约**）、关键接口无 TBD（open/stage/seal/get
    签名、错误码表 23 码、handle 字段表、回执/读结果类型、统一限额表、journal 模式单值
-   DELETE、seal 六段次序、预留-结算协议、journal 公式）；冻结值均有源码复核或设计探针实测
-   支撑并标注出处；**公共签名块（§5.3 代码块）逐字不变、§8 方法最低数 44 不变
-   （Assignment §11.13/15）**；
-3. 设计探针 P1–P11 在 `.pv_tmp/issue66-local-log-2026-10-10/probes/` 留有输入/命令/输出/脚本，
-   可复现；R66-02/R66-05/R66F-02 的多进程与 crash 兑现如实标注协议推导/设计（D2/产品验收；
-   P9–P11 区分 SQLite 实测/协议模型/真实 foundation API，不越类引用）；
-4. docs-only 新 commit 落在 `codex/issue66-local-log-packet` 的 `8377a6eb` 之上（保留
-   `de7181b3`/`1e6a6874`/`f1f3aab`/`8377a6e` 历史，不 amend/force），`git diff --name-only
-   8377a6eb..HEAD` 与 `git diff --name-only fbbbd619..HEAD` 均仅本文一份 md，工作树 clean，
-   `git diff --check` 干净；
+   DELETE、seal 六段次序、预留-结算协议、**页级 journal 公式+DDL/九形状目录+K_T/S/P 冻结值+
+   配置面+M 派生**）；冻结值均有源码复核或设计探针实测支撑并标注出处；**公共签名块（§5.3
+   代码块）逐字不变、§8 方法最低数 44 不变（Assignment §11.13/15/RC §11.8）、零公共限额
+   合法域/默认/硬上限变更（RC §11.2——M 为行 5 派生执行参数非第 14 个公共限额）**；
+3. 设计探针 P1–P11 与 **RC-P1–RC-P4** 在 `.pv_tmp/issue66-local-log-2026-10-10/probes/`
+   留有输入/命令/输出/脚本，可复现；R66-02/R66-05/R66F-02/R66S-01/02 的多进程与 crash
+   兑现如实标注协议推导/设计（D2/产品验收；P9–P11 区分 SQLite 实测/协议模型/真实
+   foundation API，RC-P1..P4 区分真实引擎实测/协议模型，不越类引用）；**P10 作为 journal
+   公式/root 计账证据的引用处已标注证据限度（lhs=0 vs 实际 28,672 B；行字节示意≠DB 物理
+   增长——§7.4 R8/DI-029），现行口径以 RC-P1..RC-P4 为据**；
+4. docs-only 新 commit 落在 `codex/issue66-local-log-packet` 的 `1e223326` 之上（**保留
+   `de7181b3`/`1e6a6874`/`f1f3aab`/`8377a6e`/`70906428`/`1e223326` 六 commit 历史**，不
+   amend/force），`git diff --name-only 1e223326..HEAD` 与 `git diff --name-only
+   fbbbd619..HEAD` 均仅本文一份 md，工作树 clean，`git diff --check` 干净；
 5. PR 呈审以新精确 head 为准（`Related to #66`、无任何自动关闭关键字），停在审批点。
 
 产品完成定义不在本文：需 D2 冻结测试 + 有效 RED + IMPL + 独立验证 + post-merge，且 #66 整体关闭
