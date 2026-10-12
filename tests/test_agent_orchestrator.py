@@ -1070,6 +1070,66 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertEqual(0, outcome.stats.scout_calls)
         self.assertIn(unit, outcome.unreviewed_units)
 
+    def test_scout_unresolved_leads_mark_units_unreviewed(self):
+        # Review round 6 (P1): a Scout that starts but stops mid-flight
+        # (deadline crossed during it, or its rounds exhausted with the
+        # lead never resolved) returns unresolved_leads -- the outcome
+        # must carry those units as unreviewed, never a clean pass.
+        import json as _json
+        from unittest.mock import patch
+
+        from lima import agent_orchestrator as orchestration
+        from lima import agent_scout as scout
+
+        for scenario in ("deadline_during_scout", "rounds_exhausted"):
+            with self.subTest(scenario=scenario):
+                unit = "src/a.c"
+                root = tempfile.mkdtemp(suffix="-scout-unresolved")
+                self.addCleanup(lambda: _rmtree(root))
+                workspace = _write_cxx_repo(root, name=unit)
+                ticks = [0.0]
+
+                def scout_reply(*args, **kwargs):
+                    if scenario == "deadline_during_scout":
+                        ticks[0] = 2.0
+                    return "[]"
+
+                def discovery_reply(*args, **kwargs):
+                    return _json.dumps(
+                        {"leads": [
+                            {"path": unit, "line": 1, "summary": "review a"},
+                        ]}
+                    )
+
+                with patch.object(
+                    orchestration, "send_semantic_request",
+                    side_effect=discovery_reply,
+                ), patch.object(
+                    scout, "post_chat_completion_text",
+                    side_effect=scout_reply,
+                ), patch.object(
+                    orchestration.time, "monotonic",
+                    side_effect=lambda: ticks[0],
+                ):
+                    outcome = orchestration.run_platform_review(
+                        None, workspace,
+                        repository_key="scout-unresolved",
+                        snapshot_hash=workspace.inventory().fingerprint(),
+                        translation_units=(unit,),
+                        mode="required",
+                        llm_config={
+                            "provider": "custom",
+                            "base_url": "https://invalid.example",
+                            "model": "m",
+                        },
+                        deadline_seconds=1,
+                    )
+                self.assertIn(unit, outcome.unreviewed_units)
+                self.assertTrue(any(
+                    note.startswith("scout: ")
+                    for note in outcome.diagnostics
+                ), outcome.diagnostics)
+
     def test_discovery_result_cap_marks_dropped_lead_units_unreviewed(self):
         # Review round 5 (P2): leads dropped by the global result cap were
         # never reviewed; their units join the unreviewed set so a

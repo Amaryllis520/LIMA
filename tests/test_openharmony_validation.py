@@ -709,9 +709,12 @@ def _outcome(findings, diagnostics=(), unreviewed_units=()):
 class FakeWorkbench:
     """Scripted run_experiment responses keyed by call order."""
 
-    def __init__(self, responses):
+    def __init__(self, responses, budget=None):
         self.responses = list(responses)
         self.calls = []
+        # Parity with ReproWorkbench.budget (review round 6 P2): the
+        # revision records refresh budget usage from the workbench.
+        self.budget = budget
 
     def run_experiment(self, repository_key, snapshot_hash, sources, driver,
                        **kwargs):
@@ -775,7 +778,7 @@ class PairedRunTests(unittest.TestCase):
             # runs first, so its workbench is built first.
             side = "vulnerable" if construction["index"] == 0 else "fixed"
             construction["index"] += 1
-            bench = FakeWorkbench(scripted[side])
+            bench = FakeWorkbench(scripted[side], budget=budget)
             workbenches.append((side, bench))
             return bench
 
@@ -1033,6 +1036,8 @@ class PairedRunTests(unittest.TestCase):
             code.startswith("replay-budget-exhausted")
             for code in result.vulnerable.diagnostics
         ), result.vulnerable.diagnostics)
+        # Review round 6 (P2): the completed replay round survives.
+        self.assertEqual(1, len(result.vulnerable.replay_observations))
         self.assertIn("fixed-not-run", result.fixed.diagnostics)
 
     def test_unrelated_fixed_findings_are_recorded_not_decisive(self):

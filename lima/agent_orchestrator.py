@@ -1976,10 +1976,19 @@ def run_platform_review(
             ) from exc
         return _empty_outcome(
             (f"scout-unavailable: {exc}",), units,
-            unreviewed_units=discovery_unreviewed,
+            unreviewed_units=tuple(sorted(
+                set(discovery_unreviewed)
+                | {lead.path for lead in given_leads}
+            )),
         )
     if report.degradation:
         diagnostics.append(f"scout: {report.degradation}")
+    # Review round 6 (P1): leads the Scout never resolved (mid-flight
+    # deadline, exhausted rounds, exhausted budget) leave their units
+    # unaudited -- every outcome return path below must carry them.
+    scout_unreviewed = {
+        lead.path for lead in report.unresolved_leads
+    }
     if not report.targets:
         return PlatformReviewOutcome(
             findings=(),
@@ -1990,7 +1999,9 @@ def run_platform_review(
             diagnostics=tuple(diagnostics),
             leads_considered=len(given_leads),
             translation_units=units,
-            unreviewed_units=discovery_unreviewed,
+            unreviewed_units=tuple(sorted(
+                set(discovery_unreviewed) | scout_unreviewed
+            )),
         )
 
     if bundle is None and analyzer_client is not None:
@@ -2226,6 +2237,6 @@ def run_platform_review(
         leads_considered=len(given_leads),
         translation_units=units,
         unreviewed_units=tuple(sorted(
-            set(discovery_unreviewed) | stage_unreviewed
+            set(discovery_unreviewed) | stage_unreviewed | scout_unreviewed
         )),
     )

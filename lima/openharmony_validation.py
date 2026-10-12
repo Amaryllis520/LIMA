@@ -774,15 +774,22 @@ def run_openharmony_case(
                 driver):
         observations = []
         elapsed = []
+        budget_error = None
         for _ in range(_REPLAY_ROUNDS):
             started_at = time.monotonic()
-            observation = workbench.run_experiment(
-                repository_key, snapshot_hash, (target_path,), driver,
-                timeout=timeout,
-            )
+            try:
+                observation = workbench.run_experiment(
+                    repository_key, snapshot_hash, (target_path,), driver,
+                    timeout=timeout,
+                )
+            except AgentBudgetExceeded as exc:
+                # Review round 6 (P2): stop, keep the completed rounds --
+                # the evidence bundle must carry real execution facts.
+                budget_error = exc
+                break
             elapsed.append(round(time.monotonic() - started_at, 6))
             observations.append(observation)
-        return tuple(observations), tuple(elapsed)
+        return tuple(observations), tuple(elapsed), budget_error
 
     (vulnerable_record, vulnerable_outcome, vulnerable_workbench,
      ) = _run_revision(case.vulnerable, vulnerable_workspace)
@@ -820,20 +827,22 @@ def run_openharmony_case(
 
     final = matching[0]
     driver = final.poc_driver_code
-    try:
-        observations, elapsed = _replay(
-            vulnerable_workbench, case.vulnerable.repository_key,
-            vulnerable_record.snapshot_hash, final.path, driver,
-        )
-    except AgentBudgetExceeded as exc:
-        # Review round 5 (P2): a replay-time budget exhaustion must return
-        # an inconclusive result (budget facts and diagnostics preserved)
-        # rather than escape -- the CLI then still writes the evidence
-        # bundle.
+    observations, elapsed, budget_error = _replay(
+        vulnerable_workbench, case.vulnerable.repository_key,
+        vulnerable_record.snapshot_hash, final.path, driver,
+    )
+    if budget_error is not None:
+        # Review round 5/6 (P2): keep the completed replay rounds and the
+        # real budget usage; return inconclusive instead of escaping so
+        # the CLI still writes the evidence bundle.
         vulnerable_record = replace(
-            vulnerable_record, status=ValidationStatus.INCONCLUSIVE,
+            vulnerable_record,
+            status=ValidationStatus.INCONCLUSIVE,
+            replay_observations=observations,
+            replay_elapsed_seconds=elapsed,
+            budget_usage=_budget_usage(vulnerable_workbench.budget),
             diagnostics=(*vulnerable_record.diagnostics,
-                         f"replay-budget-exhausted: {exc}"),
+                         f"replay-budget-exhausted: {budget_error}"),
         )
         return _finish(
             vulnerable_record,
@@ -854,6 +863,7 @@ def run_openharmony_case(
     vulnerable_record = replace(
         vulnerable_record,
         replay_observations=observations, replay_elapsed_seconds=elapsed,
+        budget_usage=_budget_usage(vulnerable_workbench.budget),
     )
     if replay_problem is not None:
         vulnerable_record = replace(
@@ -890,23 +900,26 @@ def run_openharmony_case(
         )
         return _finish(vulnerable_record, fixed_record)
 
-    try:
-        observations, elapsed = _replay(
-            fixed_workbench, case.fixed.repository_key,
-            fixed_record.snapshot_hash, final.path, driver,
-        )
-    except AgentBudgetExceeded as exc:
-        # Review round 5 (P2): same discipline on the fixed-side replay.
+    observations, elapsed, budget_error = _replay(
+        fixed_workbench, case.fixed.repository_key,
+        fixed_record.snapshot_hash, final.path, driver,
+    )
+    if budget_error is not None:
+        # Review round 5/6 (P2): same discipline on the fixed side --
+        # completed rounds and real budget usage survive the stop.
         fixed_record = replace(
             fixed_record, status=ValidationStatus.INCONCLUSIVE,
-            replay_observations=(), replay_elapsed_seconds=(),
+            replay_observations=observations,
+            replay_elapsed_seconds=elapsed,
+            budget_usage=_budget_usage(fixed_workbench.budget),
             diagnostics=(*fixed_record.diagnostics,
-                         f"replay-budget-exhausted: {exc}"),
+                         f"replay-budget-exhausted: {budget_error}"),
         )
         return _finish(vulnerable_record, fixed_record)
     fixed_record = replace(
         fixed_record,
         replay_observations=observations, replay_elapsed_seconds=elapsed,
+        budget_usage=_budget_usage(fixed_workbench.budget),
     )
     for observation in observations:
         if experiment_matches_target(
