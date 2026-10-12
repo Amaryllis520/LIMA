@@ -2534,8 +2534,10 @@ def validate_component_graph_payload(payload: Mapping[str, object]) -> None:
             if type(line) is not int or line < 1:
                 _invalid("evidence line")
             evidence_tuples.append((item["path"], line, item["imported_name"]))
-        if evidence_tuples != sorted(evidence_tuples):
-            _invalid("evidence must be (path, line, imported_name)-sorted")
+        if evidence_tuples != sorted(evidence_tuples) or len(
+            set(evidence_tuples)
+        ) != len(evidence_tuples):
+            _invalid("evidence must be (path, line, imported_name)-sorted and unique")
         edge_keys.append((source, status, target or "", edge["imported_name"]))
     if len(set(edge_keys)) != len(edge_keys) or edge_keys != sorted(edge_keys):
         _invalid("edges must be key-sorted and unique")
