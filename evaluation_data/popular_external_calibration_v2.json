@@ -6,7 +6,7 @@
   "baseline_analyzer_version": "1.6.0",
   "baseline_analyzer_sha256": "bf81ba2cf0719bd62b7b9b2bf3b621571a6a38fe5b6e79374c3cdc2e36f1e5f1",
   "calibration_analyzer_version": "1.7.0-dev",
-  "calibration_analyzer_sha256": "7eff52e4d79b81ad8e22d5d378e9f7abd56eee19321a39a7c928012d4bc14e13",
+  "calibration_analyzer_sha256": "b47eab4851950568dc40fc75d56e47952251afbabea81014e9588e57246c70e0",
   "source_holdout_manifest_sha256": "3a45b1138a5863ea4db6bb13b804f7eef4c3122fbcd5bc6bf176a0828ae181f4",
   "selection_policy": {
     "minimum_stars": 1000,
