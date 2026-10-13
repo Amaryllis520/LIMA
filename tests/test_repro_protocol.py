@@ -174,6 +174,12 @@ class ServerContractTests(unittest.TestCase):
         for bad in (
             {"src/vuln.cpp": ""},
             {"": "int x;\n"},
+            {"../escape.cpp": "int x;\n"},
+            {"/etc/escape.cpp": "int x;\n"},
+            {"src\\escape.cpp": "int x;\n"},
+            {"src/./escape.cpp": "int x;\n"},
+            {"src//escape.cpp": "int x;\n"},
+            {"src/\x00escape.cpp": "int x;\n"},
             {"src/vuln.cpp": "x" * (512 * 1024 + 1)},
             {f"p{index}.c": "int x;\n" for index in range(5)},
             "not-a-mapping",

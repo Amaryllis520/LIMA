@@ -667,6 +667,10 @@ def _validate_repro_payload(payload: object) -> dict[str, object]:
                 not isinstance(path, str)
                 or not path
                 or len(path) > 1024
+                or PurePosixPath(path).is_absolute()
+                or "\\" in path
+                or "\x00" in path
+                or any(segment in {"", ".", ".."} for segment in path.split("/"))
                 or not isinstance(content, str)
                 or not content
                 or "\x00" in content
