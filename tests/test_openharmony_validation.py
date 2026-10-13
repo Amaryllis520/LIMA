@@ -1105,6 +1105,44 @@ class BundleWriterTests(unittest.TestCase):
             git_root=self.fixture.vulnerable_repo,
         )
 
+    def test_report_carries_impact_mining_projection(self):
+        # Design section 7 wiring (scoring item 5): the dossier's impact
+        # section blames the replayed finding's line for the introducing
+        # commit, its branch spread and version tags.
+        import dataclasses
+        import subprocess
+
+        outcome = self.result.vulnerable.platform_outcome
+        finding = dataclasses.replace(outcome.findings[0], line=1)
+        patched = dataclasses.replace(
+            self.result.vulnerable,
+            platform_outcome=dataclasses.replace(
+                outcome, findings=(finding,),
+            ),
+        )
+        result = dataclasses.replace(self.result, vulnerable=patched)
+        output = self.root / "bundle-impact"
+        self.module.write_validation_bundle(
+            result, output, git_root=self.fixture.vulnerable_repo,
+        )
+        report = (output / "report.md").read_text(encoding="utf-8")
+        self.assertIn("引入提交", report)
+        self.assertIn("分支传播", report)
+        head = subprocess.run(
+            ["git", "-C", str(self.fixture.vulnerable_repo), "rev-parse",
+             "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        self.assertIn(head[:12], report)
+
+    def test_report_degrades_honestly_when_blame_cannot_resolve(self):
+        # A finding line past the file end (drifted line) must produce the
+        # bounded degradation note, never speculative impact output.
+        output = self._write()
+        report = (output / "report.md").read_text(encoding="utf-8")
+        self.assertIn("未能定位引入提交", report)
+        self.assertNotIn("分支传播:", report)
+
     def test_bundle_layout_digests_and_summary(self):
         output = self._write()
         names = sorted(

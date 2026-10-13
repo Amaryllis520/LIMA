@@ -281,6 +281,15 @@ class DossierContext:
     patch_suggestion: str = ""
     internal_id: str = ""
     known_commits: tuple[str, ...] = ()
+    # Impact-mining projection (design section 7 wiring): the introducing
+    # commit of the replayed finding's line, its branch spread and the
+    # version tags containing it.  Empty fields keep the pre-wiring
+    # dossier shape; ``impact_note`` carries the honest degradation
+    # reason when mining ran but could not resolve.
+    impact_introduced: str = ""
+    impact_branches: tuple[str, ...] = ()
+    impact_versions: tuple[str, ...] = ()
+    impact_note: str = ""
 
 
 _REPORT_TITLE: Final = "# 漏洞研究报告 (Vulnerability Research Dossier)"
@@ -501,13 +510,33 @@ def _section_impact(finding: PlatformFinding, context: DossierContext) -> str:
         if context.cve_ids
         else _NO_CVE_TEXT + "——离线索引三键（组件/路径/提交窗）无匹配，不臆测"
     )
-    return "\n".join([
-        "## 5. 影响分析 (Impact Analysis)",
-        "",
+    lines = [
         f"- **影响模块**: `{module}`（由缺陷路径推断）",
         f"- **影响版本**: {versions}"
         + (f"，提交范围 `{context.commit_range}`" if context.commit_range else ""),
         f"- **CVE 匹配**: {cves}",
+    ]
+    if context.impact_introduced:
+        lines.append(
+            f"- **引入提交**: `{context.impact_introduced[:12]}`"
+            "（对缺陷行 git blame 定位，非臆测）"
+        )
+        lines.append(
+            "- **分支传播**: "
+            + ("、".join(context.impact_branches) if context.impact_branches
+               else "（引入提交不在任何本地分支——浅克隆或已检出分离头）")
+        )
+        lines.append(
+            "- **受影响版本标签**: "
+            + ("、".join(context.impact_versions) if context.impact_versions
+               else "（无匹配标签）")
+        )
+    elif context.impact_note:
+        lines.append(f"- **影响挖掘**: {context.impact_note}")
+    return "\n".join([
+        "## 5. 影响分析 (Impact Analysis)",
+        "",
+        *lines,
     ])
 
 

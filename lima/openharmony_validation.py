@@ -1093,27 +1093,70 @@ def _fixing_diff(git_root: Path, case: OpenHarmonyCase) -> str:
     return result.stdout
 
 
+def _final_finding(
+    result: OpenHarmonyValidationResult,
+) -> "PlatformFinding | None":
+    """The replayed runtime-confirmed finding ('' when absent)."""
+
+    outcome = result.vulnerable.platform_outcome
+    if outcome is None:
+        return None
+    for finding in outcome.findings:
+        if (
+            finding.state == "runtime-confirmed"
+            and finding.cwe == result.case.cwe
+            and finding.path in result.case.target_paths
+            and finding.poc_driver_code
+        ):
+            return finding
+    return None
+
+
 def _final_driver(result: OpenHarmonyValidationResult) -> tuple[str, str]:
     """The replayed driver and its target path ('' when absent)."""
 
-    for _record, outcome in (
-        (result.vulnerable, result.vulnerable.platform_outcome),
-    ):
-        if outcome is None:
-            continue
-        for finding in outcome.findings:
-            if (
-                finding.state == "runtime-confirmed"
-                and finding.cwe == result.case.cwe
-                and finding.path in result.case.target_paths
-                and finding.poc_driver_code
-            ):
-                return finding.poc_driver_code, finding.path
-    return "", ""
+    finding = _final_finding(result)
+    if finding is None:
+        return "", ""
+    return finding.poc_driver_code, finding.path
+
+
+def _impact_context(
+    result: OpenHarmonyValidationResult, git_root: Path | None,
+) -> dict:
+    """Impact-mining fields for the dossier context (honest degradation).
+
+    Design section 7 wiring: blame the replayed finding's line for the
+    introducing commit, follow its branch spread and version tags.  No
+    git root, no replayed finding or a mining error all degrade to the
+    pre-wiring dossier shape (empty fields, one bounded note) instead of
+    speculative output.
+    """
+
+    if git_root is None:
+        return {}
+    finding = _final_finding(result)
+    if finding is None:
+        return {}
+    from .impact_mining import ImpactMiningError, mine_impact
+
+    try:
+        report = mine_impact(git_root, finding.path, finding.line)
+    except ImpactMiningError as exc:
+        return {"impact_note": f"影响挖掘不可用: {str(exc)[:120]}"}
+    if report.introduced_commit is None:
+        return {"impact_note": "影响挖掘: 未能定位引入提交（行漂移或文件缺失）"}
+    return {
+        "impact_introduced": report.introduced_commit,
+        "impact_branches": report.branches,
+        "impact_versions": report.versions,
+        "known_commits": report.known_commits,
+    }
 
 
 def _report_markdown(
     result: OpenHarmonyValidationResult, patch_digest: str,
+    git_root: Path | None = None,
 ) -> str:
     from .agent_report import DossierContext, generate_all_dossiers
 
@@ -1133,6 +1176,7 @@ def _report_markdown(
         poc_driver_code=driver,
         cve_ids=(case.cve_id,),
         patch_suggestion=case.remediation,
+        **_impact_context(result, git_root),
     )
     dossiers = generate_all_dossiers(
         outcome.findings if outcome is not None else (), context, (),
@@ -1260,7 +1304,8 @@ def write_validation_bundle(
         ).hexdigest()
 
         (staging / "report.md").write_text(
-            _report_markdown(result, patch_digest), encoding="utf-8",
+            _report_markdown(result, patch_digest, git_root=git_root),
+            encoding="utf-8",
         )
 
         _write_json(staging / "summary.json", {
