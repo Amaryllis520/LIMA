@@ -73,12 +73,13 @@ _REPRO_OPTIONAL_FIELDS: Final = frozenset({"source_overrides"})
 _MAX_REPRO_SOURCE_OVERRIDES: Final = 4
 _MAX_REPRO_SOURCE_OVERRIDE_BYTES: Final = 512 * 1024
 # A JSON string can expand each input byte into six escape bytes. Cover
-# the complete driver/override budget plus bounded path and envelope text.
+# the complete driver/override budget. Astral path characters require two
+# unicode escapes (12 bytes); reserve legacy-size space for the envelope.
 # Other endpoints retain the legacy MAX_REQUEST_BYTES ceiling.
 REPRO_MAX_REQUEST_BYTES: Final = 6 * (
     MAX_REPRO_DRIVER_BYTES
     + _MAX_REPRO_SOURCE_OVERRIDES * _MAX_REPRO_SOURCE_OVERRIDE_BYTES
-) + 128 * 1024
+) + 12 * 1024 * (MAX_REPRO_SOURCES + _MAX_REPRO_SOURCE_OVERRIDES) + MAX_REQUEST_BYTES
 
 def _bound_response_lists(
     findings: tuple[NormalizedFinding, ...], diagnostics: list[object],

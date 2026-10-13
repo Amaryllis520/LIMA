@@ -126,8 +126,12 @@ def prepared_snapshot_mock(files=SOURCE_FILES):
 class ServerContractTests(unittest.TestCase):
 
     def test_maximum_overrides_fit_serialized_request_budget(self):
-        overrides = {f"src/unit{i}.cpp": "\x01" * (512 * 1024) for i in range(4)}
+        # Astral characters expand to two JSON unicode escapes per path
+        # character; payload text can expand to six bytes per input byte.
+        paths = ["src/" + "\U0001f600" * 1000 + f"{i}.cpp" for i in range(16)]
+        overrides = {path: "\x01" * (512 * 1024) for path in paths[:4]}
         payload = repro_request(source_overrides=overrides,
+                                source_files=paths,
                                 driver_code="\x01" * MAX_DRIVER_BYTES)
         body = json.dumps(payload).encode("utf-8")
         execution = run_execution()
