@@ -506,6 +506,26 @@ class ClientCompatibilityTests(unittest.TestCase):
         )
         self.assertEqual(1, budget.max_calls - budget.remaining().calls)
 
+    def test_patch_regression_accepts_source_above_driver_budget(self):
+        class Client:
+            def repro_compile_run(self, *args, source_overrides=None, **kwargs):
+                self.overrides = source_overrides
+                return canned_repro_response()
+
+        client = Client()
+        budget = CxxAgentBudget(max_calls=2, max_output_bytes=2 * 1024 * 1024)
+        source = "x" * (512 * 1024)
+        ReproWorkbench(client, budget).run_patch_regression(
+            REPOSITORY_KEY, SNAPSHOT, "src/vuln.cpp", source, DRIVER_CODE,
+        )
+        self.assertEqual({"src/vuln.cpp": source}, client.overrides)
+        remaining = budget.remaining().calls
+        with self.assertRaises(ValueError):
+            ReproWorkbench(client, budget).run_patch_regression(
+                REPOSITORY_KEY, SNAPSHOT, "src/vuln.cpp", source + "x", DRIVER_CODE,
+            )
+        self.assertEqual(remaining, budget.remaining().calls)
+
     def test_new_style_client_receives_effective_timeout(self):
         class RecordingClient:
             def __init__(self, response):

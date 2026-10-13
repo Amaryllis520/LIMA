@@ -127,7 +127,7 @@ class ReproExecution:
     exit_code: int | None
     asan_report: dict[str, object] | None
     diagnostics: tuple[str, ...]
-    artifacts: dict[str, str]
+    artifacts: dict[str, object]
     elapsed_seconds: float
 
 
@@ -353,7 +353,7 @@ def _validate_driver_code(driver_code: object) -> str:
 def _stage_source_overrides(
     snapshot: PreparedSnapshot,
     source_overrides: dict[str, str] | None,
-    deadline: "AnalysisDeadline",
+    deadline: AnalysisDeadline,
 ) -> dict[str, str]:
     """Stage and hash the patch-regression overrides ('' when none)."""
 

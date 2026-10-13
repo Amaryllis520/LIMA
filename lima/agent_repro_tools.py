@@ -48,6 +48,7 @@ from .cxx_memory import (
     ReproResponse,
     _validate_repro_driver_code,
     _validate_repro_requested_sources,
+    _validate_repro_source_overrides,
 )
 from .runtime import AgentTool
 
@@ -393,10 +394,13 @@ class ReproWorkbench:
         unit may not even build).
         """
 
-        patched = _require_driver_code(patched_source)
         repo = _require_text(repository_key, "repository_key")
         snapshot = _require_snapshot_hash(snapshot_hash)
         target = _require_text(target_path, "target_path")
+        try:
+            patched = _validate_repro_source_overrides({target: patched_source})[target]
+        except CxxAnalyzerProtocolError as exc:
+            raise ValueError(f"invalid patched_source ({exc})") from exc
         driver = _require_driver_code(driver_code)
         if (
             timeout is not None

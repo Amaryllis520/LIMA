@@ -57,10 +57,6 @@ _UAF_FACTS_TOOL: Final = "uaf-facts"
 _UAF_FACTS_BUILD_CONTEXT_FIELDS: Final = frozenset({"mode"})
 _UAF_FACTS_BUILD_CONTEXT_MODES: Final = frozenset({"snapshot-compdb", "heuristic"})
 MAX_UAF_TRANSLATION_UNITS: Final = 16
-# The repro request carries the untrusted driver text, so its body cap is
-# deliberately wider than the legacy 64 KiB one; the old endpoints keep
-# MAX_REQUEST_BYTES unchanged.
-REPRO_MAX_REQUEST_BYTES: Final = 512 * 1024
 MAX_REPRO_SOURCES: Final = 16
 MAX_REPRO_DRIVER_BYTES: Final = 256 * 1024
 _REPRO_REQUEST_FIELDS: Final = frozenset(
@@ -76,6 +72,13 @@ _REPRO_REQUEST_FIELDS: Final = frozenset(
 _REPRO_OPTIONAL_FIELDS: Final = frozenset({"source_overrides"})
 _MAX_REPRO_SOURCE_OVERRIDES: Final = 4
 _MAX_REPRO_SOURCE_OVERRIDE_BYTES: Final = 512 * 1024
+# A JSON string can expand each input byte into six escape bytes. Cover
+# the complete driver/override budget plus bounded path and envelope text.
+# Other endpoints retain the legacy MAX_REQUEST_BYTES ceiling.
+REPRO_MAX_REQUEST_BYTES: Final = 6 * (
+    MAX_REPRO_DRIVER_BYTES
+    + _MAX_REPRO_SOURCE_OVERRIDES * _MAX_REPRO_SOURCE_OVERRIDE_BYTES
+) + 128 * 1024
 
 def _bound_response_lists(
     findings: tuple[NormalizedFinding, ...], diagnostics: list[object],
@@ -754,6 +757,10 @@ def repro_request(payload: object, settings: AnalyzerSettings) -> dict[str, obje
             "driver_sha256": execution.artifacts["driver_sha256"],
             "binary_sha256": execution.artifacts["binary_sha256"],
             "elapsed_seconds": execution.elapsed_seconds,
+            **(
+                {"source_overrides_sha256": execution.artifacts["source_overrides_sha256"]}
+                if request["source_overrides"] is not None else {}
+            ),
         },
     }
 

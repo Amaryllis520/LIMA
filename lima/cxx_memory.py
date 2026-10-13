@@ -16,7 +16,7 @@ import json
 import urllib.error
 import urllib.request
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any, Protocol
 
@@ -201,6 +201,7 @@ _REPRO_ASAN_REPORT_KEYS = {
     "raw_report_sha256",
 }
 _REPRO_EXPERIMENT_KEYS = {"driver_sha256", "binary_sha256", "elapsed_seconds"}
+_REPRO_EXPERIMENT_OPTIONAL_KEYS = {"source_overrides_sha256"}
 
 
 class CxxAnalyzerUnavailable(RuntimeError):
@@ -261,6 +262,7 @@ class ReproResponse:
     driver_sha256: str
     binary_sha256: str
     elapsed_seconds: float
+    source_overrides_sha256: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -410,6 +412,7 @@ def _validate_repro_source_overrides(
             raise CxxAnalyzerProtocolError(
                 "invalid C/C++ analyzer repro source overrides"
             )
+        _require_safe_relative_unit(path)
     return dict(source_overrides)
 
 
@@ -890,6 +893,13 @@ class CxxMemoryAnalyzerClient:
         ).encode("utf-8")
         payload = self._post_json(REPRO_PATH, body, timeout=timeout)
         self._validate_repro_payload(payload, request_id, snapshot_sha256)
+        override_digests = payload["experiment"].get("source_overrides_sha256", {})
+        expected_digests = {
+            path: hashlib.sha256(content.encode("utf-8")).hexdigest()
+            for path, content in (validated_overrides or {}).items()
+        }
+        if override_digests != expected_digests:
+            raise CxxAnalyzerProtocolError("C/C++ analyzer repro override digest mismatch")
         return ReproResponse(
             request_id=payload["request_id"],
             snapshot_sha256=payload["snapshot_sha256"],
@@ -901,6 +911,7 @@ class CxxMemoryAnalyzerClient:
             driver_sha256=payload["experiment"]["driver_sha256"],
             binary_sha256=payload["experiment"]["binary_sha256"],
             elapsed_seconds=payload["experiment"]["elapsed_seconds"],
+            source_overrides_sha256=dict(override_digests),
         )
 
     def _post_json(self, path: str, body: bytes, *, timeout: int | None = None) -> Any:
@@ -1038,10 +1049,23 @@ class CxxMemoryAnalyzerClient:
 
     @staticmethod
     def _validate_repro_experiment(experiment: object) -> None:
-        if type(experiment) is not dict or set(experiment) != _REPRO_EXPERIMENT_KEYS:
+        if type(experiment) is not dict or (
+            set(experiment) - _REPRO_EXPERIMENT_OPTIONAL_KEYS != _REPRO_EXPERIMENT_KEYS
+        ):
             raise CxxAnalyzerProtocolError(
                 "invalid C/C++ analyzer repro experiment fields"
             )
+        if "source_overrides_sha256" in experiment:
+            digests = experiment["source_overrides_sha256"]
+            if type(digests) is not dict or not 1 <= len(digests) <= MAX_REPRO_SOURCE_OVERRIDES:
+                raise CxxAnalyzerProtocolError("invalid C/C++ analyzer repro override digests")
+            for path, digest in digests.items():
+                if not isinstance(path, str) or not path or len(path) > 1024:
+                    raise CxxAnalyzerProtocolError("invalid C/C++ analyzer repro override path")
+                _require_safe_relative_unit(path)
+                if (type(digest) is not str or len(digest) != 64
+                        or any(character not in _HEX64 for character in digest)):
+                    raise CxxAnalyzerProtocolError("invalid C/C++ analyzer repro override digest")
         for key in ("driver_sha256", "binary_sha256"):
             digest = experiment[key]
             if digest == "" and key != "driver_sha256":
