@@ -5790,6 +5790,43 @@ class ReproTests(unittest.TestCase):
                         context_flags=bad,
                     )
 
+    def test_source_override_restores_frozen_modes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self._prepared_snapshot(
+                temporary, {"src/feature.c": "int f(void) { return 1; }\n"},
+            ) as snapshot:
+                target = snapshot.root / "src" / "feature.c"
+                original_parent_mode = target.parent.stat().st_mode & 0o777
+                original_file_mode = target.stat().st_mode & 0o777
+                snapshot.stage_source_override(
+                    "src/feature.c", b"int f(void) { return 2; }\n",
+                )
+                self.assertEqual(original_parent_mode,
+                                 target.parent.stat().st_mode & 0o777)
+                self.assertEqual(original_file_mode, target.stat().st_mode & 0o777)
+                snapshot.verify_inventory()
+                target.chmod(0o600)
+                target.write_bytes(b"int tampered;\n")
+                with self.assertRaisesRegex(ValueError, "bytes changed"):
+                    snapshot.verify_inventory()
+
+    def test_source_override_failure_restores_frozen_modes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self._prepared_snapshot(
+                temporary, {"src/feature.c": "int f(void) { return 1; }\n"},
+            ) as snapshot:
+                target = snapshot.root / "src" / "feature.c"
+                original_parent_mode = target.parent.stat().st_mode & 0o777
+                original_file_mode = target.stat().st_mode & 0o777
+                with patch("cxx_analyzer.snapshot.os.replace",
+                           side_effect=PermissionError("forced staging failure")):
+                    with self.assertRaisesRegex(ValueError, "staging failed"):
+                        snapshot.stage_source_override("src/feature.c", b"int fixed;\n")
+                self.assertEqual(original_parent_mode,
+                                 target.parent.stat().st_mode & 0o777)
+                self.assertEqual(original_file_mode, target.stat().st_mode & 0o777)
+                snapshot.verify_inventory()
+
     def test_run_repro_source_override_replaces_bytes_and_keeps_verify(self):
         # Patch-regression replay (scoring item 6): the override lands in
         # the request-private snapshot copy, the audit records its digest,

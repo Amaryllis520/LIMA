@@ -110,7 +110,7 @@ class PreparedSnapshot:
         if not isinstance(relative_path, str) or not relative_path:
             raise ValueError("source override path must be non-empty text")
         if (
-            not isinstance(content, (bytes, bytearray))
+            not isinstance(content, bytes | bytearray)
             or not content
             or len(content) > self.MAX_SOURCE_OVERRIDE_BYTES
         ):
@@ -131,15 +131,23 @@ class PreparedSnapshot:
         )
         with staged.open("xb") as handle:
             handle.write(bytes(content))
-        target = self.root.joinpath(*PurePosixPath(relative_path).parts)
-        preserved_mode = match.mode & 0o7777 or 0o644
+        frozen_mode = stat.S_IMODE(target.stat().st_mode)
+        parent_mode = stat.S_IMODE(target.parent.stat().st_mode)
         try:
-            # Inventory files are staged read-only; a regression override
-            # must lift the write bit just long enough to replace the
-            # bytes, then restore the verified mode.
-            os.chmod(target, preserved_mode | 0o200)
-            os.replace(staged, target)
-            os.chmod(target, preserved_mode)
+            try:
+                # POSIX rename requires a writable destination directory;
+                # Windows also requires clearing the target's read-only bit.
+                # No repository process runs during this staging operation.
+                os.chmod(target.parent, parent_mode | stat.S_IWUSR)
+                os.chmod(target, frozen_mode | stat.S_IWUSR)
+                os.replace(staged, target)
+            finally:
+                # Restore snapshot permissions, not the upstream file mode,
+                # including when replacement fails before changing bytes.
+                try:
+                    os.chmod(target, frozen_mode)
+                finally:
+                    os.chmod(target.parent, parent_mode)
         except OSError as exc:
             raise ValueError("source override staging failed") from exc
         digest = hashlib.sha256(bytes(content)).hexdigest()

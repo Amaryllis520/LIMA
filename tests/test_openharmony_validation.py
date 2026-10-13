@@ -1128,8 +1128,8 @@ class BundleWriterTests(unittest.TestCase):
         report = (output / "report.md").read_text(encoding="utf-8")
         self.assertIn("引入提交", report)
         self.assertIn("分支传播", report)
-        head = subprocess.run(
-            ["git", "-C", str(self.fixture.vulnerable_repo), "rev-parse",
+        head = subprocess.run(  # noqa: S603 -- local checkout fixture
+            ["git", "-C", str(self.fixture.vulnerable_repo), "rev-parse",  # noqa: S607
              "HEAD"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
@@ -1151,6 +1151,125 @@ class BundleWriterTests(unittest.TestCase):
         report = (output / "report.md").read_text(encoding="utf-8")
         self.assertIn("PoC 回归验证", report)
         self.assertIn("已通过——同 PoC 在修复版本 3/3", report)
+
+    def test_report_does_not_pass_partial_fixed_replay(self):
+        from dataclasses import replace
+
+        for observation in (
+            _observation(ok=True, stage="run", exit_code=0),
+            _observation(ok=False, stage="run", exit_code=1,
+                         error_type="'heap-use-after-free'",
+                         faulting_file="'src/parser.c'"),
+            _observation(ok=False, stage="transport-failed", exit_code=None),
+        ):
+            with self.subTest(observation=observation):
+                fixed = replace(
+                    self.result.fixed,
+                    status=self.module.ValidationStatus.INCONCLUSIVE,
+                    replay_observations=(observation,),
+                    diagnostics=("replay-budget-exhausted: budget",),
+                )
+                result = replace(self.result, fixed=fixed,
+                                 status=self.module.ValidationStatus.INCONCLUSIVE)
+                report = self.module._report_markdown(result, "a" * 64)
+                self.assertNotIn("已通过——同 PoC", report)
+                self.assertIn("PoC 回归验证", report)
+
+    def test_report_requires_clean_observations_even_with_passed_status(self):
+        from dataclasses import replace
+
+        bad = _observation(ok=False, stage="run", exit_code=1,
+                           error_type="'heap-use-after-free'",
+                           faulting_file="'src/parser.c'")
+        result = replace(self.result, fixed=replace(
+            self.result.fixed, replay_observations=(bad,) * 3,
+            diagnostics=(),
+        ))
+        self.assertNotIn(
+            "已通过——同 PoC",
+            self.module._report_markdown(result, "a" * 64),
+        )
+
+    def test_report_binds_impact_and_regression_to_each_finding(self):
+        from dataclasses import replace
+
+        from lima.impact_mining import ImpactReport
+
+        outcome = self.result.vulnerable.platform_outcome
+        primary = replace(outcome.findings[0], line=1)
+        other = replace(_finding(path="src/util.c", cwe="CWE-476",
+                                 state="runtime-confirmed"), line=1,
+                        target_id="other-target")
+        result = replace(self.result, vulnerable=replace(
+            self.result.vulnerable,
+            platform_outcome=replace(outcome, findings=(primary, other)),
+        ))
+
+        def mined(_root, path, line):
+            commit = "a" * 40 if path == primary.path else "b" * 40
+            return ImpactReport(introduced_commit=commit)
+
+        with patch("lima.impact_mining.mine_impact", side_effect=mined) as mining:
+            report = self.module._report_markdown(
+                result, "c" * 64, git_root=self.fixture.vulnerable_repo,
+            )
+        self.assertEqual(2, mining.call_count)
+        dossiers = report.split("# 漏洞研究报告")[1:]
+        self.assertEqual(2, len(dossiers))
+        self.assertIn("`aaaaaaaaaaaa`", dossiers[0])
+        self.assertNotIn("`bbbbbbbbbbbb`", dossiers[0])
+        self.assertIn("`bbbbbbbbbbbb`", dossiers[1])
+        self.assertNotIn("`aaaaaaaaaaaa`", dossiers[1])
+        self.assertIn("PoC 回归验证", dossiers[0])
+        self.assertNotIn("**PoC 回归验证**", dossiers[1])
+
+    def test_report_does_not_attribute_impact_to_semantic_finding(self):
+        from dataclasses import replace
+
+        from lima.impact_mining import ImpactReport
+
+        outcome = self.result.vulnerable.platform_outcome
+        primary = replace(outcome.findings[0], line=1)
+        other = replace(_finding(path="src/util.c", cwe="CWE-476",
+                                 state="semantic-supported"), line=1)
+        result = replace(self.result, vulnerable=replace(
+            self.result.vulnerable,
+            platform_outcome=replace(outcome, findings=(primary, other)),
+        ))
+        with patch("lima.impact_mining.mine_impact",
+                   return_value=ImpactReport(introduced_commit="a" * 40)) as mining:
+            report = self.module._report_markdown(
+                result, "c" * 64, git_root=self.fixture.vulnerable_repo,
+            )
+        self.assertEqual(1, mining.call_count)
+        other_report = report.split("# 漏洞研究报告")[2]
+        self.assertNotIn("引入提交", other_report)
+        self.assertNotIn("**PoC 回归验证**", other_report)
+
+    def test_report_does_not_select_an_ambiguous_replay_finding(self):
+        from dataclasses import replace
+
+        outcome = self.result.vulnerable.platform_outcome
+        first = outcome.findings[0]
+        second = replace(first, target_id="second-target", line=first.line + 1)
+        result = replace(
+            self.result,
+            vulnerable=replace(self.result.vulnerable,
+                               platform_outcome=replace(outcome, findings=(first, second))),
+        )
+        self.assertNotIn("**PoC 回归验证**",
+                         self.module._report_markdown(result, "a" * 64))
+
+    def test_report_does_not_pass_clean_replay_with_inconclusive_status(self):
+        from dataclasses import replace
+
+        result = replace(
+            self.result,
+            fixed=replace(self.result.fixed, status=self.module.ValidationStatus.INCONCLUSIVE),
+            status=self.module.ValidationStatus.INCONCLUSIVE,
+        )
+        self.assertNotIn("已通过——同 PoC",
+                         self.module._report_markdown(result, "a" * 64))
 
     def test_bundle_layout_digests_and_summary(self):
         output = self._write()
