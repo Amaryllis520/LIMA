@@ -290,6 +290,11 @@ class DossierContext:
     impact_branches: tuple[str, ...] = ()
     impact_versions: tuple[str, ...] = ()
     impact_note: str = ""
+    # Remediation regression verdict (scoring item 6): derived from the
+    # fixed-side PoC replay -- "已通过（…N/N 干净运行…)" when the same PoC
+    # ran clean on the fixed revision, the precise failure mode otherwise.
+    # Empty keeps the pre-wiring placeholder (no replay evidence at all).
+    remediation_regression: str = ""
 
 
 _REPORT_TITLE: Final = "# 漏洞研究报告 (Vulnerability Research Dossier)"
@@ -548,12 +553,17 @@ def _section_remediation(context: DossierContext) -> str:
         if context.cve_ids
         else _DISCLOSURE_NEW
     )
-    return "\n".join([
+    lines = [
         "## 6. 修复建议与披露 (Remediation & Disclosure)",
         "",
         f"- **修复建议**: {suggestion}",
-        f"- **披露计划**: {disclosure}",
-    ])
+    ]
+    if context.remediation_regression:
+        lines.append(
+            f"- **PoC 回归验证**: {context.remediation_regression}"
+        )
+    lines.append(f"- **披露计划**: {disclosure}")
+    return "\n".join(lines)
 
 
 def generate_dossier(finding: PlatformFinding, context: DossierContext) -> str:

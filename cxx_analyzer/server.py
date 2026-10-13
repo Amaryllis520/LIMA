@@ -73,6 +73,9 @@ _REPRO_REQUEST_FIELDS: Final = frozenset(
         "driver_code",
     }
 )
+_REPRO_OPTIONAL_FIELDS: Final = frozenset({"source_overrides"})
+_MAX_REPRO_SOURCE_OVERRIDES: Final = 4
+_MAX_REPRO_SOURCE_OVERRIDE_BYTES: Final = 512 * 1024
 
 def _bound_response_lists(
     findings: tuple[NormalizedFinding, ...], diagnostics: list[object],
@@ -601,7 +604,9 @@ def _validate_repro_payload(payload: object) -> dict[str, object]:
         if isinstance(payload, dict)
         else None
     )
-    if type(payload) is not dict or set(payload) != _REPRO_REQUEST_FIELDS:
+    if type(payload) is not dict or not (
+        set(payload) - _REPRO_OPTIONAL_FIELDS == _REPRO_REQUEST_FIELDS
+    ):
         raise RequestError("invalid_request", request_id=request_id)
 
     if request_id is None:
@@ -642,12 +647,40 @@ def _validate_repro_payload(payload: object) -> dict[str, object]:
     ):
         raise RequestError("invalid_request", request_id=request_id)
 
+    source_overrides = payload.get("source_overrides")
+    if source_overrides is not None:
+        # Patch-regression replay (scoring item 6): bounded map of
+        # inventory path -> patched content.  Path membership is
+        # cross-checked against the prepared snapshot inside run_repro;
+        # here only the wire shape and byte bounds are enforced.
+        if (
+            not isinstance(source_overrides, dict)
+            or not source_overrides
+            or len(source_overrides) > _MAX_REPRO_SOURCE_OVERRIDES
+        ):
+            raise RequestError("invalid_request", request_id=request_id)
+        for path, content in source_overrides.items():
+            if (
+                not isinstance(path, str)
+                or not path
+                or len(path) > 1024
+                or not isinstance(content, str)
+                or not content
+                or "\x00" in content
+                or len(content.encode("utf-8"))
+                > _MAX_REPRO_SOURCE_OVERRIDE_BYTES
+            ):
+                raise RequestError(
+                    "invalid_request", request_id=request_id
+                )
+
     return {
         "request_id": request_id,
         "repository_key": normalized_key,
         "snapshot_sha256": snapshot_sha256,
         "source_files": source_files,
         "driver_code": driver_code,
+        "source_overrides": source_overrides,
     }
 
 
@@ -691,6 +724,7 @@ def repro_request(payload: object, settings: AnalyzerSettings) -> dict[str, obje
             deadline=deadline,
             timeout_seconds=settings.step_timeout_seconds,
             settings=settings,
+            source_overrides=request["source_overrides"],
         )
         snapshot.verify_inventory(deadline)
     except AnalysisDeadlineExceeded as exc:

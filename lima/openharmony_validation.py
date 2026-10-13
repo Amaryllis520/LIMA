@@ -1154,6 +1154,29 @@ def _impact_context(
     }
 
 
+def _regression_verdict(result: OpenHarmonyValidationResult) -> str:
+    """PoC regression verdict from the fixed-side replay (scoring item 6).
+
+    The same driver that confirmed the finding replays on the fixed
+    revision; the pair validator already grades that leg, so the dossier
+    just projects it: clean runs read as the patch holding, the precise
+    failure mode otherwise, and no replay keeps the placeholder silence.
+    """
+
+    fixed = result.fixed
+    rounds = len(fixed.replay_observations)
+    if rounds == 0:
+        return ""
+    codes = fixed.diagnostics
+    if any(code == "fixed-replay-hit" for code in codes):
+        return "未通过——同 PoC 在修复版本上仍触发目标缺陷"
+    if any(code == "fixed-replay-compile-failure" for code in codes):
+        return "未判定——修复版本上回放编译失败"
+    if any(code == "fixed-replay-unclean" for code in codes):
+        return "未通过——修复版本上回放非干净运行（非目标错误）"
+    return f"已通过——同 PoC 在修复版本 {rounds}/{rounds} 干净运行，不再触发"
+
+
 def _report_markdown(
     result: OpenHarmonyValidationResult, patch_digest: str,
     git_root: Path | None = None,
@@ -1176,6 +1199,7 @@ def _report_markdown(
         poc_driver_code=driver,
         cve_ids=(case.cve_id,),
         patch_suggestion=case.remediation,
+        remediation_regression=_regression_verdict(result),
         **_impact_context(result, git_root),
     )
     dossiers = generate_all_dossiers(

@@ -479,6 +479,33 @@ class ClientCompatibilityTests(unittest.TestCase):
             )
         self.assertEqual([9], client.calls)
 
+    def test_run_patch_regression_overrides_target_and_charges_budget(self):
+        # Scoring item 6 product step: the same driver replays against the
+        # patched unit via the source-override wire, one budgeted call.
+        class OverrideRecordingClient:
+            def __init__(self, response):
+                self.response = response
+                self.calls = []
+
+            def repro_compile_run(self, repository_key, snapshot_hash,
+                                  source_files, driver_code, *, timeout=None,
+                                  source_overrides=None):
+                self.calls.append((tuple(source_files), source_overrides))
+                return self.response
+
+        client = OverrideRecordingClient(canned_repro_response())
+        budget = CxxAgentBudget(max_calls=2)
+        workbench = ReproWorkbench(client, budget, default_timeout=30)
+        patched = "int fixed(void) { return 0; }\n"
+        workbench.run_patch_regression(
+            REPOSITORY_KEY, SNAPSHOT, "src/vuln.cpp", patched, DRIVER_CODE,
+        )
+        self.assertEqual(
+            [(("src/vuln.cpp",), {"src/vuln.cpp": patched})],
+            client.calls,
+        )
+        self.assertEqual(1, budget.max_calls - budget.remaining().calls)
+
     def test_new_style_client_receives_effective_timeout(self):
         class RecordingClient:
             def __init__(self, response):

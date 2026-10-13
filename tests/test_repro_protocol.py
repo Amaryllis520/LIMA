@@ -123,6 +123,35 @@ def prepared_snapshot_mock(files=SOURCE_FILES):
 
 
 class ServerContractTests(unittest.TestCase):
+
+    def test_source_overrides_field_validated(self):
+        # Patch-regression replay: the optional source_overrides field is
+        # bounded on the wire.  A valid shape passes validation (the
+        # request then proceeds to the snapshot stage, which rejects this
+        # fixture's missing import root -- proving validation let it
+        # through); every invalid shape dies with invalid_request.
+        with self.assertRaises(analyzer_server.RequestError) as caught:
+            analyzer_server.repro_request(
+                repro_request(
+                    source_overrides={"src/vuln.cpp": "int patched;\n"}
+                ),
+                analyzer_settings(),
+            )
+        self.assertNotEqual("invalid_request", caught.exception.code)
+
+        for bad in (
+            {"src/vuln.cpp": ""},
+            {"": "int x;\n"},
+            {"src/vuln.cpp": "x" * (512 * 1024 + 1)},
+            {"p%d.c" % index: "int x;\n" for index in range(5)},
+            "not-a-mapping",
+        ):
+            with self.assertRaises(analyzer_server.RequestError) as caught:
+                analyzer_server.repro_request(
+                    repro_request(source_overrides=bad), analyzer_settings(),
+                )
+            self.assertEqual("invalid_request", caught.exception.code)
+
     def test_unknown_request_field_rejected(self):
         with self.assertRaises(analyzer_server.RequestError) as caught:
             analyzer_server.repro_request(repro_request(extra=True), analyzer_settings())
@@ -452,6 +481,41 @@ def valid_repro_response_payload():
 
 
 class ClientContractTests(unittest.TestCase):
+    @patch("lima.cxx_memory.uuid.uuid4", return_value=REQUEST_ID)
+    def test_repro_compile_run_sends_source_overrides(self, _uuid4):
+        opener = RecordingOpener(valid_repro_response_payload())
+        client = repro_client(opener)
+        overrides = {"src/vuln.cpp": "int patched;\n"}
+        client.repro_compile_run(
+            REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE,
+            source_overrides=overrides,
+        )
+        self.assertEqual(
+            overrides,
+            json.loads(opener.request.data.decode("utf-8"))[
+                "source_overrides"
+            ],
+        )
+
+        # Without overrides the field stays absent (wire compatibility).
+        second = RecordingOpener(valid_repro_response_payload())
+        repro_client(second).repro_compile_run(
+            REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE
+        )
+        self.assertNotIn(
+            "source_overrides",
+            json.loads(second.request.data.decode("utf-8")),
+        )
+
+    @patch("lima.cxx_memory.uuid.uuid4", return_value=REQUEST_ID)
+    def test_repro_compile_run_rejects_invalid_overrides(self, _uuid4):
+        client = repro_client(RecordingOpener(valid_repro_response_payload()))
+        with self.assertRaises(CxxAnalyzerProtocolError):
+            client.repro_compile_run(
+                REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE,
+                source_overrides={"src/vuln.cpp": ""},
+            )
+
     @patch("lima.cxx_memory.uuid.uuid4", return_value=REQUEST_ID)
     def test_repro_compile_run_validates_response_schema(self, _uuid4):
         opener = RecordingOpener(valid_repro_response_payload())

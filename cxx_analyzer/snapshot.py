@@ -72,12 +72,88 @@ class PreparedSnapshot:
     _root_identity: tuple[int, int]
     _inventory: tuple[_InventoryFile, ...]
     _closed: bool = field(default=False, init=False, repr=False)
+    # Post-override verification anchor: ``None`` until a source override
+    # is staged, then the fingerprint the re-verification must reproduce
+    # (patched bytes in, tampering anywhere else still caught).
+    _expected_fingerprint: str | None = field(default=None, init=False, repr=False)
+
+    #: Patch-regression overrides may not exceed the repository scan's
+    #: single-file budget -- a patch bigger than an auditable source file
+    #: is not a patch.
+    MAX_SOURCE_OVERRIDE_BYTES = 512 * 1024
 
     @property
     def writable_roots(self) -> tuple[Path, ...]:
         """Return the only trees repository-provided processes may modify."""
 
         return self.build_root, self.scratch_root
+
+    def stage_source_override(
+        self, relative_path: str, content: bytes,
+        deadline: AnalysisDeadline | None = None,
+    ) -> str:
+        """Replace one verified inventory file's bytes for this request.
+
+        Patch-regression replay (scoring item 6: "the PoC no longer
+        triggers after the patch") compiles the same driver against a
+        patched translation unit inside the request-private snapshot
+        copy.  The override must name a file this snapshot verified and
+        stay within :data:`MAX_SOURCE_OVERRIDE_BYTES`; the inventory
+        expectation moves to the override's own size and digest, and the
+        post-run :meth:`verify_inventory` anchor moves with it, so every
+        other byte must still match the pinned snapshot.  Returns the
+        override content digest.
+        """
+
+        if self._closed:
+            raise ValueError("prepared snapshot is no longer live")
+        if not isinstance(relative_path, str) or not relative_path:
+            raise ValueError("source override path must be non-empty text")
+        if (
+            not isinstance(content, (bytes, bytearray))
+            or not content
+            or len(content) > self.MAX_SOURCE_OVERRIDE_BYTES
+        ):
+            raise ValueError("source override content is empty or over budget")
+        if deadline is not None:
+            deadline.check("snapshot source override")
+        match = next(
+            (item for item in self._inventory if item.path == relative_path),
+            None,
+        )
+        if match is None:
+            raise ValueError(
+                "source override path is outside the verified inventory"
+            )
+        target = self.root.joinpath(*PurePosixPath(relative_path).parts)
+        staged = self.build_root / (
+            "override_" + hashlib.sha256(content).hexdigest()[:16]
+        )
+        with staged.open("xb") as handle:
+            handle.write(bytes(content))
+        target = self.root.joinpath(*PurePosixPath(relative_path).parts)
+        preserved_mode = match.mode & 0o7777 or 0o644
+        try:
+            # Inventory files are staged read-only; a regression override
+            # must lift the write bit just long enough to replace the
+            # bytes, then restore the verified mode.
+            os.chmod(target, preserved_mode | 0o200)
+            os.replace(staged, target)
+            os.chmod(target, preserved_mode)
+        except OSError as exc:
+            raise ValueError("source override staging failed") from exc
+        digest = hashlib.sha256(bytes(content)).hexdigest()
+        self._inventory = tuple(
+            _InventoryFile(
+                item.path,
+                len(content) if item.path == relative_path else item.size,
+                digest if item.path == relative_path else item.sha256,
+                item.mode,
+            )
+            for item in self._inventory
+        )
+        self._expected_fingerprint = _fingerprint(self._inventory)
+        return digest
 
     def verify_inventory(self, deadline: AnalysisDeadline | None = None) -> None:
         """Re-verify every declared source byte without trusting generated output."""
@@ -130,7 +206,8 @@ class PreparedSnapshot:
             if len(data) != item.size or digest != item.sha256:
                 raise ValueError("snapshot inventory bytes changed after verification")
             verified.append(_InventoryFile(item.path, len(data), digest, item.mode))
-        if _fingerprint(verified) != self.sha256:
+        expected = self._expected_fingerprint or self.sha256
+        if _fingerprint(verified) != expected:
             raise ValueError("snapshot inventory fingerprint changed after verification")
 
     def cleanup(self, *, deadline: AnalysisDeadline | None = None) -> None:

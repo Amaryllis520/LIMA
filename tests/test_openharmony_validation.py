@@ -1143,6 +1143,15 @@ class BundleWriterTests(unittest.TestCase):
         self.assertIn("未能定位引入提交", report)
         self.assertNotIn("分支传播:", report)
 
+    def test_report_states_poc_regression_verdict(self):
+        # Scoring item 6 projection: the fixed-side replay verdict lands
+        # in the remediation section instead of the pre-wiring
+        # "not wired" placeholder.
+        output = self._write()
+        report = (output / "report.md").read_text(encoding="utf-8")
+        self.assertIn("PoC 回归验证", report)
+        self.assertIn("已通过——同 PoC 在修复版本 3/3", report)
+
     def test_bundle_layout_digests_and_summary(self):
         output = self._write()
         names = sorted(

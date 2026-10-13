@@ -5790,6 +5790,83 @@ class ReproTests(unittest.TestCase):
                         context_flags=bad,
                     )
 
+    def test_run_repro_source_override_replaces_bytes_and_keeps_verify(self):
+        # Patch-regression replay (scoring item 6): the override lands in
+        # the request-private snapshot copy, the audit records its digest,
+        # and the post-run inventory re-verification accepts the
+        # override-adjusted expectations without loosening them for every
+        # other byte.
+        vulnerable = "int target_value(void) { return 1; }\n"
+        patched = "int target_value(void) { return 2; }\n"
+        driver_code = (
+            'extern "C" int target_value(void);\n'
+            "int main() { return target_value() == 2 ? 0 : 1; }\n"
+        )
+        tag = hashlib.sha256(driver_code.encode("utf-8")).hexdigest()[:8]
+        deadline = AnalysisDeadline.start(90)
+        with tempfile.TemporaryDirectory() as temporary:
+            with self._prepared_snapshot(
+                temporary, {"src/feature.c": vulnerable},
+            ) as snapshot:
+                calls = []
+                responses = (
+                    {
+                        "execution": {"status": "completed", "returncode": 0},
+                        "produce_binary": f"repro_bin_{tag}",
+                    },
+                    {
+                        "execution": {"status": "completed", "returncode": 0},
+                        "produce_binary": f"repro_bin_{tag}",
+                    },
+                )
+                with patch(
+                    "cxx_analyzer.repro.run_step",
+                    side_effect=self._recorded_run_step(calls, responses, snapshot),
+                ):
+                    result = repro.run_repro(
+                        snapshot,
+                        ("src/feature.c",),
+                        driver_code,
+                        settings=self._settings(),
+                        deadline=deadline,
+                        timeout_seconds=30,
+                        source_overrides={"src/feature.c": patched},
+                    )
+                self.assertEqual(
+                    patched,
+                    (snapshot.root / "src" / "feature.c").read_text(
+                        encoding="utf-8"
+                    ),
+                )
+                snapshot.verify_inventory()
+                self.assertIn("source_overrides_sha256", result.artifacts)
+                self.assertEqual(
+                    hashlib.sha256(patched.encode("utf-8")).hexdigest(),
+                    result.artifacts["source_overrides_sha256"][
+                        "src/feature.c"
+                    ],
+                )
+
+    def test_run_repro_rejects_override_outside_inventory(self):
+        driver_code = "int main() { return 0; }\n"
+        deadline = AnalysisDeadline.start(90)
+        with tempfile.TemporaryDirectory() as temporary:
+            with self._prepared_snapshot(
+                temporary, {"src/feature.c": "int f(void) { return 1; }\n"},
+            ) as snapshot:
+                with self.assertRaisesRegex(
+                    ValueError, "outside the verified"
+                ):
+                    repro.run_repro(
+                        snapshot,
+                        ("src/feature.c",),
+                        driver_code,
+                        settings=self._settings(),
+                        deadline=deadline,
+                        timeout_seconds=30,
+                        source_overrides={"src/other.c": "int g;\n"},
+                    )
+
     def test_run_repro_c_source_gets_compdb_context_flags(self):
         # feature.c only defines pilot_magic under -DPILOT_FLAG, which is
         # declared by the snapshot's compile_commands.json: the recorded

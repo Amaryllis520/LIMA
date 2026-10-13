@@ -382,6 +382,37 @@ def _validate_repro_driver_code(driver_code: object) -> str:
     return driver_code
 
 
+MAX_REPRO_SOURCE_OVERRIDES = 4
+MAX_REPRO_SOURCE_OVERRIDE_BYTES = 512 * 1024
+
+
+def _validate_repro_source_overrides(
+    source_overrides: object,
+) -> dict[str, str]:
+    if (
+        not isinstance(source_overrides, dict)
+        or not source_overrides
+        or len(source_overrides) > MAX_REPRO_SOURCE_OVERRIDES
+    ):
+        raise CxxAnalyzerProtocolError(
+            "invalid C/C++ analyzer repro source overrides"
+        )
+    for path, content in source_overrides.items():
+        if (
+            not isinstance(path, str)
+            or not path
+            or len(path) > 1024
+            or not isinstance(content, str)
+            or not content
+            or "\x00" in content
+            or len(content.encode("utf-8")) > MAX_REPRO_SOURCE_OVERRIDE_BYTES
+        ):
+            raise CxxAnalyzerProtocolError(
+                "invalid C/C++ analyzer repro source overrides"
+            )
+    return dict(source_overrides)
+
+
 def _validate_bounded_strings(value: object, limit: int) -> None:
     if (
         type(value) is not list
@@ -809,6 +840,7 @@ class CxxMemoryAnalyzerClient:
         driver_code: str,
         *,
         timeout: int | None = None,
+        source_overrides: dict[str, str] | None = None,
     ) -> ReproResponse:
         """Request one sandboxed ASan compile-and-run under a strict contract.
 
@@ -819,6 +851,10 @@ class CxxMemoryAnalyzerClient:
         that contradicts its own exit code or ASan report, or an audit
         experiment block with malformed hashes all raise
         :class:`CxxAnalyzerProtocolError`.
+
+        ``source_overrides`` (patch-regression replay) maps at most four
+        inventory-relative paths to patched content; the analyzer stages
+        them inside the request-private snapshot copy.
         """
 
         if not isinstance(repository_key, str) or not repository_key:
@@ -831,6 +867,11 @@ class CxxMemoryAnalyzerClient:
             raise CxxAnalyzerProtocolError("invalid C/C++ analyzer snapshot digest")
         requested_sources = _validate_repro_requested_sources(source_files)
         validated_driver = _validate_repro_driver_code(driver_code)
+        validated_overrides = (
+            _validate_repro_source_overrides(source_overrides)
+            if source_overrides is not None
+            else None
+        )
         request_id = str(uuid.uuid4())
         body = json.dumps(
             {
@@ -840,6 +881,11 @@ class CxxMemoryAnalyzerClient:
                 "snapshot_sha256": snapshot_sha256,
                 "source_files": list(requested_sources),
                 "driver_code": validated_driver,
+                **(
+                    {"source_overrides": validated_overrides}
+                    if validated_overrides is not None
+                    else {}
+                ),
             }
         ).encode("utf-8")
         payload = self._post_json(REPRO_PATH, body, timeout=timeout)
