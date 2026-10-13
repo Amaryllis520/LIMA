@@ -532,9 +532,10 @@ def _section_impact(finding: PlatformFinding, context: DossierContext) -> str:
                else "（引入提交不在任何本地分支——浅克隆或已检出分离头）")
         )
         lines.append(
-            "- **受影响版本标签**: "
+            "- **包含引入提交的历史标签**: "
             + ("、".join(context.impact_versions) if context.impact_versions
                else "（无匹配标签）")
+            + "（仅表示提交祖先关系，不代表当前仍受影响）"
         )
     elif context.impact_note:
         lines.append(f"- **影响挖掘**: {context.impact_note}")

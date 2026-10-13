@@ -1143,6 +1143,24 @@ class BundleWriterTests(unittest.TestCase):
         self.assertIn("未能定位引入提交", report)
         self.assertNotIn("分支传播:", report)
 
+    def test_report_labels_fix_descendant_tags_as_historical(self):
+        from dataclasses import replace
+
+        _git(self.fixture.vulnerable_repo, "tag", "v1.0.0", self.fixture.vulnerable_commit)
+        _git(self.fixture.vulnerable_repo, "tag", "v1.0.1", self.fixture.fixed_commit)
+        outcome = self.result.vulnerable.platform_outcome
+        result = replace(self.result, vulnerable=replace(
+            self.result.vulnerable,
+            platform_outcome=replace(outcome, findings=(replace(outcome.findings[0], line=1),)),
+        ))
+        report = self.module._report_markdown(
+            result, "a" * 64, git_root=self.fixture.vulnerable_repo,
+        )
+        self.assertNotIn("受影响版本标签", report)
+        self.assertIn("包含引入提交的历史标签", report)
+        self.assertIn("不代表当前仍受影响", report)
+        self.assertIn("v1.0.0、v1.0.1", report)
+
     def test_report_states_poc_regression_verdict(self):
         # Scoring item 6 projection: the fixed-side replay verdict lands
         # in the remediation section instead of the pre-wiring
