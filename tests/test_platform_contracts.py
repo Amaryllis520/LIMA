@@ -402,6 +402,26 @@ class PlatformReviewContractsTests(unittest.TestCase):
         self.assertEqual(aep.coverage.in_scope_file_count, 1)
         self.assertEqual(aep.coverage.analyzed_file_count, 0)
 
+    def test_aep_with_unreviewed_units_is_incomplete_with_gaps(self):
+        # Review round 5 (P1): unaudited required scope voids the
+        # no-actionable-hypothesis reading; INCOMPLETE carries one
+        # guaranteeable coverage gap per unreviewed unit.
+        outcome = _outcome(
+            findings=(),
+            targets=(),
+            stats=PlatformReviewStats(0, 0, 0, 0, 0, 0, 1),
+            leads_considered=0,
+            translation_units=("src/example.c", "src/other.c"),
+            unreviewed_units=("src/example.c", "src/other.c"),
+        )
+        aep = platform_review_to_aep(
+            outcome, snapshot_sha256=SNAPSHOT, repository=REPOSITORY
+        )
+        self.assertIs(aep.audit_outcome, AuditOutcome.INCOMPLETE)
+        details = {gap.detail for gap in aep.coverage_gaps}
+        self.assertIn("unreviewed-unit: src/example.c", details)
+        self.assertIn("unreviewed-unit: src/other.c", details)
+
     # ------------------------------------------------- WorkflowSummary mapping
 
     def test_workflow_summary_completed(self):

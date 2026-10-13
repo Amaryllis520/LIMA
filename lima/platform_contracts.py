@@ -878,8 +878,11 @@ def platform_review_to_aep(
 
     Deviations forced by the frozen contract vocabulary: ``AuditBudget``
     carries no byte/line meters or upper bounds (facts, not quota
-    decisions), and ``AuditOutcome.INCOMPLETE`` is unused because it
-    demands coverage gaps the platform diagnostics cannot guarantee.  The
+    decisions).  ``AuditOutcome.INCOMPLETE`` is used exactly when the
+    outcome reports ``unreviewed_units`` (required scope unaudited,
+    review round 5 P1): the verdict then carries one
+    ``unreviewed-unit: <path>`` coverage gap per unit, satisfying the
+    outcome's documented precondition by construction.  The
     repository-profile id is a deterministic stand-in (the platform has no
     profile artifact yet).  The package is validated by the real
     ``AuditEvidencePackage`` constructor; failures propagate (fail-closed).
@@ -912,7 +915,16 @@ def platform_review_to_aep(
             if hypothesis.status is HypothesisStatus.STATICALLY_SUPPORTED
         )
     )
-    if eligible:
+    unreviewed_units = tuple(
+        sorted(set(getattr(outcome, "unreviewed_units", ()) or ()))
+    )
+    if unreviewed_units:
+        # Review round 5 (P1): unaudited required scope voids the
+        # "no actionable hypothesis" reading -- the audit did not finish.
+        # INCOMPLETE's documented precondition (a guaranteeable coverage
+        # gap) is satisfied by construction below.
+        audit_outcome = AuditOutcome.INCOMPLETE
+    elif eligible:
         audit_outcome = AuditOutcome.COMPLETED
     elif not hypotheses:
         audit_outcome = AuditOutcome.NO_ACTIONABLE_HYPOTHESIS
@@ -945,6 +957,15 @@ def platform_review_to_aep(
             continue
         detail = _sanitize_text(
             diagnostic[len(_COVERAGE_GAP_PREFIX):], cap=_AEP_MAX_DETAIL_BYTES
+        )
+        if not detail or detail in seen_details:
+            continue
+        seen_details.add(detail)
+        gaps.append(AuditCoverageGap(gap_code=_COVERAGE_GAP_CODE, detail=detail))
+    for unit in unreviewed_units:
+        # The guaranteeable coverage gap behind an INCOMPLETE verdict.
+        detail = _sanitize_text(
+            f"unreviewed-unit: {unit}", cap=_AEP_MAX_DETAIL_BYTES,
         )
         if not detail or detail in seen_details:
             continue

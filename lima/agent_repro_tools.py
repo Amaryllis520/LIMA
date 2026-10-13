@@ -297,6 +297,17 @@ class ReproWorkbench:
         # the wire timeout stays owned by the injected Task 1 client.
         self.default_timeout = default_timeout
 
+    @property
+    def budget(self) -> CxxAgentBudget:
+        """The shared agent budget replay accounting must stay honest to.
+
+        Review round 6 (P2): when a replay round exhausts the budget, the
+        caller still records the completed rounds and must refresh the
+        revision's budget usage from this live object instead of the
+        pre-replay snapshot.
+        """
+        return self._budget
+
     def run_experiment(
         self,
         repository_key: str,

@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 平台管线闭环（Scout→假设→实验→修正→裁决） | `tests/test_platform_evaluation.py`（26 测试，零网络 Fake） | 已验证（Fake，2026-09-11） | 本仓库 unittest；`scripts/run_platform_evaluation.py --fake-llm` 全绿 |
 | 配对基准指标（检测率/误报率/非安全过滤/实验收敛/PoC 稳定性） | `scripts/run_platform_evaluation.py` 全 6 案例 Fake 跑批 | 已验证（Fake，按构造确定性） | 报告 `detection_rate=1.0`、`false_positive_rate=0.0`、`non_security_filter_rate=1.0`、`experiment_convergence=1.0`、`poc_stability=1.0`（脚本是哈希判定，稳定性指标仅真实工作台下有信息量） |
-| 真实模型分类（Specialist/Critic/Scout 走真实 provider） | `scripts/run_platform_evaluation.py`（不带 `--fake-llm`，配 `--provider-url/--model`） | 未验证（Task 10 范围内禁止真实调用，归主 agent 执行） | — |
+| 真实模型分类（Specialist/Critic/Scout 走真实 provider） | `scripts/run_platform_evaluation.py`（不带 `--fake-llm`，glm-5.3 本地网关） | 已验证（glm-5.3，2026-10-11；语义检测 2/4、误报 1/8、非安全过滤 0/1，runtime 类指标受哈希工作台结构性封顶） | `evaluation_data/reports/platform_eval_real_glm53_2026-10-11.json`（§5 补充） |
 | 真实容器 ASan 实证（`runtime-confirmed` 的 D3 证据） | Docker clang-14/ASan 沙箱真实执行 PoC | 未验证（走真实环境验收，独立记录） | — |
 | 真实仓库全链检测 | ResInsight 限定子集（UAF v2 全链） | 已验证（诚实 abstain，2026-09-12，见 §2） | `.superpowers/tmp/uaf-demo-outcome.json` |
 
@@ -80,13 +80,28 @@ OPM 系仓库（如 opm-common / opm-simulators）的论文侧运行尚未执行
 | 平台跑 | 未执行 | — | — |
 | 档案 | 未执行 | — | — |
 
-## 4. OpenHarmony（占位——仅仓库接入差异）
+## 4. OpenHarmony 实战扫描记录（2026-10-07 ~ 10-09）
 
-内存包行为在 OpenHarmony 与油气仓库上同构（设计 §9.8）；接入差异只在
-仓库导入与离线依赖预处理。沙箱不开外网，依赖一律沙箱外预处理；完整
-流程（快照限额放开参数组、tmpfs/内存、受信构建门禁、OpenHarmony 注意
-事项）见 `deploy/competition/README.md` §4/§5 与
-`.env.competition.example`。执行后按 §3 同样格式回填。
+与 §3 的双版本验证模式互补，本节为 master 快照实战扫描模式（真实 Sidecar +
+真实 glm-5.3 全链，检测脚本 `.zcode/tmp/detect.py`，工作区
+`D:\OpenHarmonyPilot\`）。接入差异（仓库导入/离线依赖/快照限额参数组）见
+`deploy/competition/README.md` §4/§5。
+
+| 战役 | 目标（语言） | 耗时/调用 | 产出 | 人工核验终局 |
+|---|---|---|---|---|
+| 首战 cJSON | third_party_cJSON master（C） | 72 s | 0 finding 0 误报 | 干净空手（facts 441 条、0 候选→发现回退→Scout 全否决） |
+| 第二战 dsoftbus | communication_dsoftbus master（C） | 6180 s / 16 实验 | 2 semantic-supported + 1 弃权 | CWE-416@693 锁生命周期竞态：代码级成立、本容器运行时归因未达 D3，按奖励计划表单口径本地留档；CWE-125@853 人工判疑似误报关闭 |
+| 第三战 avrcp | communication_bluetooth_service avrcp_ct_profile.cpp（C++，两轮） | 2602 s / 27 实验 | 1 semantic-supported | **运行时证据闭合**：CWE-476+CWE-416 复合（TOCTOU 空解引用 + 临时 shared_ptr 所有权剥离 UAF）；朴素判空补丁不可修（10 连发双对照），所有权修复 10/10 存活。证据 `.zcode/reports/bt-avrcp-cwe476-verification/`（含 VERIFICATION.md 与 4 份 ASan 日志）；报告草稿留档待处置 |
+| 第四战 l2cap | l2cap_le.c C 栈（C，验收战四轮） | 1454 s / 13 实验 | 1 semantic-supported + 3 弃权 | CWE-416@1540：险模式真（回调-仍挂链-后释放）、当下不可达（唯一回调方 EATT 不重入）——潜伏型 API 契约脆弱性 |
+
+战果驱动的平台修复（提交见 PR #266）：C++ 限定名行定位（`0cd5008`）、
+专家契约字段上限预告（`749b980`）、桩链接策略与 Critic 所有权规则
+（`233a841`）、master→Release/LTS 对齐复核工具（`dc27258`）。
+
+诚实边界：master 扫描不等于受支持 Release/LTS 版本（对齐复核用
+`scripts/check_finding_on_branches.py`）；"专家自主使用桩闭包"目前仅间接
+证据（对比旧战役驱动全灭于编译关 vs 本轮 13/27 实验全部执行）；C++ TU 的
+确定性 facts 层为 0（全靠 LLM 发现回退）。
 
 ## 5. 配对基准（`evaluation_data/platform_cases/`）
 
@@ -105,3 +120,105 @@ OPM 系仓库（如 opm-common / opm-simulators）的论文侧运行尚未执行
   （脚本工作台哈希判定下按构造稳定，真实工作台下该指标才有信息量）。
 - 有效性边界（评测报告内逐条携带）：合成与钉死对不等价于生产检测能力；
   真实 Clang 提取与真实容器 ASan 为独立验收；null 指标≠满分。
+
+
+## 3. OpenHarmony pilot 双版本真实运行（2026-10-07）
+
+**首条真实双版本闭环记录。** 案例为上游 libexpat CVE-2022-43680（CWE-416；OH
+third_party_expat 同源，见 `evaluation_data/openharmony/README.md` 的 OH 构建不受
+影响边界）。
+
+- **基线**：LIMA commit `e81f6c09`（分支 `feat/openharmony-pilot-validation`，
+  Task 1-6 全部落地后的工作树）。脆弱 `5ac714074d2639e0b8bb82aa73ef51c4f7498d29`
+  / 修复 `56967f83d68d5fc750f9e66a9a76756c94c7c173`，快照
+  `D:\OpenHarmonyPilot\expat-up-{vuln,fixed}`（完整克隆、LF 工作区、
+  `_overlay/expat_config.h` 与根 compdb 钉扎）。
+- **环境**：真实 Sidecar（`lima-cxx-analyzer:local`，AST 预算 128 MiB、扫描限额
+  5000/512KiB/20MiB 宿主容器同值）；真实 provider glm-5.3（本地网关，
+  `thinking:disabled`）。
+- **命令**：`scripts/run_openharmony_validation.py --case
+  evaluation_data/openharmony/pilot_case.json --repository-import-root
+  <import root> --output output/openharmony/pilot --cxx-analyzer-url
+  http://cxx-analyzer:8090 --timeout 300 --deadline-seconds 5400
+  --parallelism 1 --dialogue-rounds 2`（容器内执行，退出码 2）。
+- **结果**：整体 `failed`（检测侧）。vulnerable 全链 1087.6 s / 85 LLM 调用 /
+  310,967 reply bytes：6 窗口发现 14 条线索、多个 semantic-supported 发现
+  （CWE-125@3240、CWE-190@7309），无 runtime-confirmed 的 CWE-416 目标命中——
+  按合同判 `vulnerable-no-matching-finding`，不修饰。fixed 全链 145.7 s / 9 调用 /
+  178,623 bytes：0 finding（该侧 passed）。双侧快照覆盖 100%。
+- **证据**：bundle `output/openharmony/pilot/`（10 文件，`SHA256SUMS.json` 宿主侧
+  逐文件重算全通过；AEP 双侧、VEP×2、patch.diff、中文报告含 3+3 矩阵与真实性边界）。
+- **状态表更新**：真实模型分类一行——Scout/Specialist/Critic/Discovery 全部在真实
+  provider 上运行并保持诚实降级语义，记**已验证（glm-5.3，2026-10-07）**；真实容器
+  ASan 实证一行——实验编译/运行真实发生于沙箱（多次 clang++-14+ASan 编译与执行），
+  但自动链路未产出 runtime-confirmed 命中，记**已验证（运行）/runtime-confirmed
+  待达成**；另记同环境手工触发驱动实证（脆弱版目标绑定 heap-use-after-free@
+  xmlparse.c:7148、修复版干净退出，2026-10-04 探针）作为 D3 侧旁证。
+- **已知边界**：发现层当前稳定产出"正确文件 + 正确 CWE 族 + 正确邻域"的
+  semantic-supported（4603 一带多次独立命中），分配失败注入手法已由智能体从通用
+  指引自学（v4-v5 实测），自动 runtime-confirmed 的最后一跃待模型迭代（claude
+  限流冷却中，glm 持续可用）。
+
+
+### 全量项目门禁记录（`scripts/lima.ps1 test`，2026-10-07）
+
+容器面 2890 测试：2 失败 + 6 错误 + 37 跳过。**全部 8 个失败/错误均在
+origin/main（`3045910`）同一容器的基线复跑中同样出现**，为既有测试镜像
+（`lima-cxx-analyzer:test`，构建于旧提交）缺依赖所致，非本分支回归：
+
+| 精确 test id | 既有原因 |
+|---|---|
+| `tests.test_cxx_analyzer.AnalyzerComposeSecurityTests.test_compose_passes_only_admin_configuration_and_shared_snapshot_limits` | 镜像缺 `yaml` |
+| `tests.test_cxx_analyzer.AnalyzerComposeSecurityTests.test_cxx_analyzer_is_an_internal_non_root_read_only_sidecar` | 镜像缺 `yaml` |
+| `tests.test_cxx_analyzer.SourceRuleTests.test_rules_tie_three_distinct_oob_shapes_to_known_object_bounds` | 镜像缺 `yaml` |
+| `tests.test_cxx_analyzer.SourceRuleTests.test_release_rules_exclude_same_pointer_rebinding_controls` | 镜像缺 `yaml` |
+| `unittest.loader._FailedTest.test_build_recipe` | 镜像缺 `yaml`（模块导入失败） |
+| `unittest.loader._FailedTest.test_cxx_memory_evaluation` | 镜像缺 `yaml`（模块导入失败） |
+| `tests.test_cxx_analyzer.SourceScanContainerTests.test_fixture_manifest_is_complete_and_semgrep_marks_only_candidates` | 镜像 semgrep fixture 既有失败 |
+
+另两处运行期现象已定位并处置：`test_v4_baseline_manifest` 双数据集指纹失配为
+Windows 工作区 CRLF 检出伪影（提交内容与 main 逐字节一致；LF 重检出后指纹全部
+吻合，非代码回归）；`ReproContainerTests` 偶发 `asan-runtime-segv-retried` 为
+`cxx_analyzer/repro.py` 文档声明的受限容器 ASan 渲染器噪声类（重试机制消化）。
+本分支新增的 18 个 git 夹具测试在容器内因镜像无 git 干净跳过（宿主全绿）。
+
+### §5 补充：真模型评测首跑（glm-5.3，2026-10-11）
+
+状态表第 3 行落地。报告 `evaluation_data/reports/platform_eval_real_glm53_2026-10-11.json`
+（已做密钥扫描，零泄漏）。**结构性口径**：脚本工作台按 canned 驱动精确哈希判
+PoC，真模型在构造上不可达 runtime 状态——检测率/收敛/PoC 稳定性三项在本
+评测器下对真模型结构性封顶（真容器 ASan 由独立验收线覆盖）。**有效测得**：
+
+| 指标 | 真模型实测 | 解读 |
+|---|---|---|
+| 语义层检测 | 2/4（uaf/null-deref 各 1 finding；overflow 漏报；rebind 因模型伪造 target_id 被 fail-closed 拒绝） | 顶层 detection_rate=0.0 系期望状态锚定 runtime 所致，语义层才是本评测器下真实能力读数 |
+| 误报率 | 1/8（clean 案例 4/4 全零 ✓；FP=非安全案例 fixed 侧） | 误报纪律 7/8 |
+| 非安全过滤 | 0/1 | **真实缺口**：FP 为 CWE-190（词表内）——词表封闭性挡不住算术代码上的溢出假设，过滤需内存安全影响证明（backlog） |
+| 总耗时 | 180 s / 12 revision | — |
+
+### §5 补充 2：检测率指标的真模型口径（backlog）
+
+`run_platform_evaluation.py` 的 detection_rate 以案例期望终态（runtime 锚定）
+为分母，真模型模式下结构性为 0。已立项：增加语义层级补充指标
+（vulnerable 侧产出任意正向状态 finding 的比例），Fake/真模型两模式同口径可算。
+
+### §3 补充：runtime-confirmed 冲刺四连（2026-10-11，加固后平台重跑）
+
+Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、桩链接策略、所有权
+规则），以同一 expat 案例重冲 runtime-confirmed 自动命中：
+
+| 轮 | 参数 | 终局 | 关键事实 |
+|---|---|---|---|
+| r2 | rounds=2 | inconclusive | Scout 引用不存在的 lead id（模型幻觉引用，fail-closed 正确拒绝） |
+| r3 | rounds=2 | failed（no-matching） | 1494 s / 100 调用 / 16 线索，scout 轮数耗尽（预算剩 60）；3 个 semantic-supported 全落正确函数（doProlog:4603×2=CVE-2022-43680 本体、storeEntityValue:6073） |
+| r4 | rounds=3 | failed（no-matching） | 1022 s / 71 调用；3 个 semantic-supported（doProlog:4603、2738、6806） |
+
+**结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
+**检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
+未闭合环节**（expat 该 UAF 的触发需要"计数分配器+外部实体+正确分配序号"的
+多步组合，历史上手动战役 v5 的 21 个实验也只到 semantic-supported）。
+附带信号：r3/r4 的 fixed 侧各产出 1/3 个 semantic-supported 假设（pilot 合同
+按目标 cwe+path 判定故 passed）——与配对基准真模型 FP 1/8 的语义层信号一致，
+语义层在偏净代码上会产假设是已知特征，runtime 层是收敛关键。
+r3 排查顺带修复发现层两处盲区（顶行首裸名/宏别名，`1d65100`）。
+bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。

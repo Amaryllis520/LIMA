@@ -340,6 +340,7 @@ class RepositoryScanner:
 
     def _platform_collaboration(
         self, mode: str, status: str, outcome, v4: dict | None = None,
+        unreviewed_units: tuple[str, ...] = (),
     ) -> dict:
         """The collaboration.platform audit payload (platform design §6)."""
 
@@ -392,6 +393,13 @@ class RepositoryScanner:
             "broker": broker_counts,
             # Review round 4: diagnostics are free text too -- mask them.
             "diagnostics": [privacy_text(item) for item in outcome.diagnostics],
+            **(
+                {
+                    "unreviewed_units": list(unreviewed_units),
+                }
+                if unreviewed_units
+                else {}
+            ),
             "targets": audit,
         }
         if v4 is not None:
@@ -764,9 +772,19 @@ class RepositoryScanner:
             self._merge_cxx_finding(
                 findings, cxx_finding_index, candidate_finding
             )
+        # Review round 5 (P1): unaudited required scope must not read as a
+        # completed review.  Partial results (findings, sealed evidence)
+        # survive, but the collaboration payload and the sealed AEP both
+        # say the audit is incomplete instead of succeeded.
+        unreviewed = sorted(
+            getattr(outcome, "unreviewed_units", ()) or ()
+        )
+        status = "completed" if not unreviewed else "review-incomplete"
+        if unreviewed:
+            metrics.inc("repository_scan_platform_review_incomplete_total")
         v4 = self._seal_platform_v4(outcome, repository_key, inventory)
         return self._platform_collaboration(
-            mode, "completed", outcome, v4=v4
+            mode, status, outcome, v4=v4, unreviewed_units=unreviewed,
         )
 
     def scan(
