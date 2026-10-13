@@ -5810,6 +5810,28 @@ class ReproTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "bytes changed"):
                     snapshot.verify_inventory()
 
+    def test_source_override_does_not_preserve_writable_mode_drift(self):
+        for fail_replace in (False, True):
+            with self.subTest(fail_replace=fail_replace):
+                with tempfile.TemporaryDirectory() as temporary:
+                    with self._prepared_snapshot(
+                        temporary, {"src/feature.c": "int f(void) { return 1; }\n"},
+                    ) as snapshot:
+                        target = snapshot.root / "src" / "feature.c"
+                        frozen_mode = target.stat().st_mode & 0o777
+                        target.chmod(0o600)
+                        if fail_replace:
+                            with patch("cxx_analyzer.snapshot.os.replace",
+                                       side_effect=PermissionError("forced failure")):
+                                with self.assertRaisesRegex(ValueError, "staging failed"):
+                                    snapshot.stage_source_override(
+                                        "src/feature.c", b"int fixed;\n",
+                                    )
+                        else:
+                            snapshot.stage_source_override("src/feature.c", b"int fixed;\n")
+                        self.assertEqual(frozen_mode, target.stat().st_mode & 0o777)
+                        snapshot.verify_inventory()
+
     def test_source_override_failure_restores_frozen_modes(self):
         with tempfile.TemporaryDirectory() as temporary:
             with self._prepared_snapshot(

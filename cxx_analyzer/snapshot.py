@@ -131,7 +131,9 @@ class PreparedSnapshot:
         )
         with staged.open("xb") as handle:
             handle.write(bytes(content))
-        frozen_mode = stat.S_IMODE(target.stat().st_mode)
+        # Match _freeze_source_tree rather than trusting live permission
+        # drift or restoring the upstream file's writable mode.
+        frozen_mode = 0o555 if match.mode & 0o111 else 0o444
         parent_mode = stat.S_IMODE(target.parent.stat().st_mode)
         try:
             try:
