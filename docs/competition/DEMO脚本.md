@@ -1,7 +1,8 @@
 # LIMA 智能体漏洞挖掘平台 · DEMO 演示脚本
 
 评委演示分镜脚本。全部命令在仓库根目录（Git Bash）逐字可运行且已实测；
-"预期输出"摘自 2026-09-11 实跑记录（HEAD `99a0697`）。除场景 5 外零依赖
+"预期输出"摘自 2026-10-12 实跑记录（main `11fa730`，PR #266 合并后全量
+彩排，场景 1–4 输出与下文逐字一致）。除场景 5 外零依赖
 （不需要 Docker 与 LLM Provider）。总时长建议 7–9 分钟。
 
 ## 场景 1：零依赖全量演示（约 2 分钟）
@@ -156,6 +157,22 @@ export LIMA_LLM_MODEL=<模型名>
 ./.venv/Scripts/python scripts/run_platform_evaluation.py \
   --output output/platform-evaluation-real.json
 ```
+
+**本地网关变体**（glm-5.3，2026-10-11 已实证，报告入库
+`evaluation_data/reports/platform_eval_real_glm53_2026-10-11.json`）：
+
+```bash
+export LIMA_LLM_BASE_URL=http://127.0.0.1:8046/v1
+export LIMA_CXX_AGENT_MODEL=glm-5.3
+export LIMA_CXX_AGENT_REQUEST_PARAMS_JSON='{"thinking":{"type":"disabled"}}'
+export LIMA_LLM_API_KEY=<网关密钥>
+./.venv/Scripts/python scripts/run_platform_evaluation.py \
+  --output output/platform-evaluation-real.json
+```
+
+真模型首跑读数（12 revision / 180 s）：语义层检测 2/4、误报 1/8、非安全
+过滤 0/1——诚实成绩与缺口解读见 `docs/COMPETITION_VALIDATION.md` §5 补充；
+演示时如实展示，不与 Fake 全绿混同。
 
 **要点**：报告 `identity.llm_transport = "provider"`、模型名入身份清单，
 指标结构与 Fake 模式一致；无凭证时脚本在管线开工前以
