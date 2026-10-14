@@ -1,0 +1,33 @@
+{
+  "schema_version": "expat-composition-probe-evidence-v1",
+  "recorded_utc_date": "2026-10-14",
+  "what": "Same-driver same-config positive/negative dual control for the expat composition probe (CVE-2022-43680 lineage). This verifies the probe MECHANISM only: it is not a platform runtime-confirmed finding and not a model-campaign outcome.",
+  "driver": "tests/fixtures/expat_composition_probe/probe.c",
+  "runner": "tests/fixtures/expat_composition_probe/run_dual_control.sh",
+  "environment": {
+    "container": "chain-probe",
+    "compiler": "clang-14 (Debian 14.0.6), -fsanitize=address -g -O1",
+    "config_overlay": "_overlay/expat_config.h (XML_DTD=1, XML_CONTEXT_BYTES=1024; sha256 84f39ebc112c20b457fc3244b5cb917b84a3b4e0610afbc229032d3b20862da6, identical on both sides)"
+  },
+  "vulnerable": {
+    "checkout": "expat-up-vuln",
+    "commit": "5ac714074d2639e0b8bb82aa73ef51c4f7498d29",
+    "result": "heap-use-after-free (ASan, READ of size 8)",
+    "crash_site": "hashTableIterInit (expat/lib/xmlparse.c:7148) <- dtdReset (xmlparse.c:6738) <- XML_ParserReset (xmlparse.c:1218) <- probe.c:115",
+    "trigger_ordinal": 2,
+    "ordinal_convention": "ordinal N = the (N+1)th allocation from XML_ExternalEntityParserCreate fails; ordinal 2 equals the official test's allocation_count=3 (third allocation = the encoding-name copy in parserInit)",
+    "log": ".zcode/reports/expat-probe-vuln-2026-10-14.log (local maintainer copy)"
+  },
+  "fixed": {
+    "checkout": "expat-up-fixed",
+    "commit": "56967f83d68d5fc750f9e66a9a76756c94c7c173",
+    "result": "clean: sweep completed all 64 ordinals, zero crashes, normal exit",
+    "log": ".zcode/reports/expat-probe-fixed-2026-10-14.log (local maintainer copy)"
+  },
+  "official_reference": {
+    "test": "test_alloc_reset_after_external_entity_parser_create_fail (expat/tests/runtests.c, expat-up-fixed): handler rejects non-NULL context, encoding name \"UTF-8\" (comment: needs something non-NULL), allocation_count=3, XML_ParserReset(g_parser, NULL) after the failed create",
+    "location": "expat/tests/runtests.c (expat-up-fixed), handler rejects non-NULL context, encoding name \"UTF-8\" (comment: needs something non-NULL), allocation_count=3, XML_ParserReset(g_parser, NULL) after the failed create",
+    "shared_dtd_path": "expat/lib/xmlparse.c: if (! context) newDtd = oldDtd; (under XML_DTD) -- a NULL context is the shared-DTD semantics, not a sign of calling outside the real path"
+  },
+  "honesty": "The dual control ran once per side on 2026-10-14 in the chain-probe container; logs preserved. The unit test suite asserts the probe composition and this evidence record's structure -- it does NOT re-run the container build (no expat checkout or clang assumption in CI)."
+}
