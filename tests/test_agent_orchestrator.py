@@ -1631,12 +1631,18 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertEqual(_specialist_recipe_appendix(), appendix)
 
         # expat lineage: counting allocator, ordinal sweep, build-gate
-        # reachability honesty.
+        # reachability honesty, and the exact composition rule (r6
+        # battle: drivers with only internal entities and an
+        # empty-context child parser never reach the shared-state
+        # failure).
         uaf = _SPECIALIST_CWE_RECIPES["CWE-416"]
         self.assertIn("allocation ordinal", uaf)
         self.assertIn("sweep N", uaf)
         self.assertIn("build configuration", uaf)
         self.assertIn("unreachable in that build", uaf)
+        self.assertIn("external (SYSTEM) entity", uaf)
+        self.assertIn("from inside that handler", uaf)
+        self.assertIn("empty context", uaf)
         # dsoftbus/avrcp lineage: caller-precondition replication, the
         # second-lookup window, the two-thread hammer, noise discipline.
         self.assertIn("verbatim", uaf)
