@@ -287,11 +287,15 @@ bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
    复刻的探针（`tests/fixtures/expat_composition_probe/`，扫描序数替代
    固定 count=3），同驱动同配置在冻结对上运行（chain-probe，clang-14
    +ASan，XML_DTD=1 overlay 两侧逐字节一致）：**vulnerable `5ac71407`
-   于序数 2（≡官方第 3 次分配）heap-use-after-free**，栈
+   heap-use-after-free（触发序数 3，勘误见下）**，栈
    `XML_ParserReset → dtdReset → hashTableIterInit（xmlparse.c:7148）`，
    与 2026-10-04 手动实证同归因点；**fixed `56967f83` 全部 64 序数
    清洁**。此为探针机制验证（正负对照），不是平台 runtime-confirmed，
-   也不是模型战役结果；证据 JSON 入夹具目录，日志存维护者本地。
+   也不是模型战役结果。勘误（2026-10-14 二轮复核）：触发序数为 **3**（日志实锄：序数
+   1/2 创建失败但父重置存活，序数 3 触发；探针与官方 duff 分配器同为
+   "允许 N 次后下一次失败"语义，故序数 3 ≡ 官方 allocation_count=3，
+   失败点为创建起第 4 次分配=parserInit 编码名复制；此前"序数 2/第 3 次
+   分配"的记录有误）。原始日志已随夹具入库供交叉核对。
 
 ### §3 补充 3：V06 avrcp 补丁双对照复跑（2026-10-14）
 
