@@ -278,3 +278,14 @@ bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
    faulthandler 看门狗判活。
 5. **V02 状态**：runtime-confirmed 自动命中仍开放，止损线 10-19 晚；
    r5/r6 bundle：容器 `/app/output/openharmony/pilot-r{5,6}`。
+
+### §3 补充 3：V06 avrcp 补丁双对照复跑（2026-10-14）
+
+平台定级 semantic-supported → 不满足 #287 自动闭环前提，走手工双对照
+（记录：`.zcode/reports/2026-10-14-v06-avrcp-patch-regression.md`，工件
+`v06-rerun-2026-10-14/`）。全量重建三变体后同 PoC 同锤击：**原版 9/10
+TU 归因崩溃；判空补丁 8/10 崩溃且 8/8 全为 heap-use-after-free**（帧钉
+GetEventId ← ProcessVendorNotificationTimeout(patched:1499)，朴素补丁
+不可修复更硬）；**所有权修复 0/10 崩溃 + 完整 soak 94 s rc=0
+（checked=117812 全存活）**。与 10-07 基线同向。未验证项：正常业务功能
+面回归、真机/模拟器（与报告草稿 §9 同口径）。
