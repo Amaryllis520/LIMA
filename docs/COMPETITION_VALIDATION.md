@@ -238,6 +238,8 @@ Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、�
 | r2 | rounds=2 | inconclusive | Scout 引用不存在的 lead id（模型幻觉引用，fail-closed 正确拒绝） |
 | r3 | rounds=2 | failed（no-matching） | 1494 s / 100 调用 / 16 线索，scout 轮数耗尽（预算剩 60）；3 个 semantic-supported 全落正确函数（doProlog:4603×2=CVE-2022-43680 本体、storeEntityValue:6073） |
 | r4 | rounds=3 | failed（no-matching） | 1022 s / 71 调用；3 个 semantic-supported（doProlog:4603、2738、6806） |
+| r5 | rounds=3，配方 v1 首战 | inconclusive（required-review 未满足） | 1141 s / 76 调用；3 finding 全钉 4603（CWE-416×2 + CWE-415）×8 轮 = 24 实验全清洁（driver sha 全在、零编译错）。当日重建 analyzer 丢失 AST 128 MB 预算 → ast-output-limit → xmlparse.c 必需审阅跳过 → fixed-not-run |
+| r6 | rounds=3，AST 预算已修 | inconclusive（required-review 未满足） | 1928 s / 146 调用；8 finding（4603×4 + 2738/3240/5769/6806，全 CWE-416）×8 轮 = 64 实验全清洁。驱动已采用配方（`XML_ParserCreate_MM` + 计数分配器 + 单驱动内扫 N 0–400 + 内部子集 + 外部解析器创建 + 父解析器释放），但只声明**内部**实体、`XML_ExternalEntityParserCreate(p, NULL, NULL)` 空 context 脱离真实外部实体路径——组合步缺失，配方 v2（PR #302）已补 |
 
 **结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
 **检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
@@ -248,3 +250,31 @@ Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、�
 语义层在偏净代码上会产假设是已知特征，runtime 层是收敛关键。
 r3 排查顺带修复发现层两处盲区（顶行首裸名/宏别名，`1d65100`）。
 bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
+
+### §3 补充 2：配方战役 r5/r6（2026-10-14，CWE 键控配方层首战）
+
+配方层（PR #301，`_SPECIALIST_CWE_RECIPES`）随 r5/r6 首战。诚实判读：
+
+1. **检测层更强了**：r6 产 8 个 semantic-supported，其中 4 个钉 CVE 本体位
+   4603；配方未让检测跑偏。
+2. **实验层仍未闭合，但缺口已定位到组合步**：r6 驱动执行了配方 90%
+   （MM 套件/计数分配器/扫 N/内部子集/子解析器/父释放），漏的正是
+   CVE-2022-43680 的决定性组合：**SYSTEM 外部实体 + handler 内带真实
+   context 创建子解析器 + 失败后复用父解析器**。官方回归测试
+   （test_alloc_reset_after_external_entity_parser_create_fail）即此形态。
+   配方 v2（PR #302）把该组合写成硬规则；r7 待其合并后打。
+3. **案例判定层出现新结构性墙**：r4 之后合入的评审第 5 轮 P2 加固规定
+   线索封顶时被裁线索的 TU 记 unreviewed → 必需审阅（target_paths 全集）
+   未满足 → 整局 inconclusive + fixed-not-run。glm-5.3 在 xmlparse.c
+   （236 KB 单 TU）稳定发现 >16 线索，故本案例在此模型下恒 inconclusive。
+   该合同是诚实记账（覆盖缺口不得读作干净），不是缺陷；但 PASSED 判定
+   需要线索量下降或按 TU 尺寸调窗/线索配额——决策留维护者，本轮不改。
+4. **环境教训（复跑必读）**：analyzer 容器重建必须带
+   `LIMA_REPOSITORY_IMPORT_PATH=D:\OpenHarmonyPilot` 与
+   `LIMA_CXX_MAX_AST_JSON_BYTES=134217728`（compose 默认 16 MB 会被
+   xmlparse.c 的 78 MB AST 打穿）；LLM 网关已从 .env 的 8045（已停）迁到
+   8046（zcode-proxy，glm-5.3 可用，均耗 ~15 s/调用，首轮偶发 3–6 分钟）；
+   r5v1 曾被误判挂起而终止（urllib 长读 + 大提示词），后续轮用
+   faulthandler 看门狗判活。
+5. **V02 状态**：runtime-confirmed 自动命中仍开放，止损线 10-19 晚；
+   r5/r6 bundle：容器 `/app/output/openharmony/pilot-r{5,6}`。
