@@ -34,7 +34,7 @@ import datetime
 import fnmatch
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
@@ -281,6 +281,20 @@ class DossierContext:
     patch_suggestion: str = ""
     internal_id: str = ""
     known_commits: tuple[str, ...] = ()
+    # Impact-mining projection (design section 7 wiring): the introducing
+    # commit of the replayed finding's line, its branch spread and the
+    # version tags containing it.  Empty fields keep the pre-wiring
+    # dossier shape; ``impact_note`` carries the honest degradation
+    # reason when mining ran but could not resolve.
+    impact_introduced: str = ""
+    impact_branches: tuple[str, ...] = ()
+    impact_versions: tuple[str, ...] = ()
+    impact_note: str = ""
+    # Remediation regression verdict (scoring item 6): derived from the
+    # fixed-side PoC replay -- "已通过（…N/N 干净运行…)" when the same PoC
+    # ran clean on the fixed revision, the precise failure mode otherwise.
+    # Empty keeps the pre-wiring placeholder (no replay evidence at all).
+    remediation_regression: str = ""
 
 
 _REPORT_TITLE: Final = "# 漏洞研究报告 (Vulnerability Research Dossier)"
@@ -501,13 +515,34 @@ def _section_impact(finding: PlatformFinding, context: DossierContext) -> str:
         if context.cve_ids
         else _NO_CVE_TEXT + "——离线索引三键（组件/路径/提交窗）无匹配，不臆测"
     )
-    return "\n".join([
-        "## 5. 影响分析 (Impact Analysis)",
-        "",
+    lines = [
         f"- **影响模块**: `{module}`（由缺陷路径推断）",
         f"- **影响版本**: {versions}"
         + (f"，提交范围 `{context.commit_range}`" if context.commit_range else ""),
         f"- **CVE 匹配**: {cves}",
+    ]
+    if context.impact_introduced:
+        lines.append(
+            f"- **引入提交**: `{context.impact_introduced[:12]}`"
+            "（对缺陷行 git blame 定位，非臆测）"
+        )
+        lines.append(
+            "- **分支传播**: "
+            + ("、".join(context.impact_branches) if context.impact_branches
+               else "（引入提交不在任何本地分支——浅克隆或已检出分离头）")
+        )
+        lines.append(
+            "- **包含引入提交的历史标签**: "
+            + ("、".join(context.impact_versions) if context.impact_versions
+               else "（无匹配标签）")
+            + "（仅表示提交祖先关系，不代表当前仍受影响）"
+        )
+    elif context.impact_note:
+        lines.append(f"- **影响挖掘**: {context.impact_note}")
+    return "\n".join([
+        "## 5. 影响分析 (Impact Analysis)",
+        "",
+        *lines,
     ])
 
 
@@ -519,12 +554,17 @@ def _section_remediation(context: DossierContext) -> str:
         if context.cve_ids
         else _DISCLOSURE_NEW
     )
-    return "\n".join([
+    lines = [
         "## 6. 修复建议与披露 (Remediation & Disclosure)",
         "",
         f"- **修复建议**: {suggestion}",
-        f"- **披露计划**: {disclosure}",
-    ])
+    ]
+    if context.remediation_regression:
+        lines.append(
+            f"- **PoC 回归验证**: {context.remediation_regression}"
+        )
+    lines.append(f"- **披露计划**: {disclosure}")
+    return "\n".join(lines)
 
 
 def generate_dossier(finding: PlatformFinding, context: DossierContext) -> str:
@@ -565,6 +605,8 @@ def generate_all_dossiers(
     findings: Sequence[PlatformFinding],
     context: DossierContext,
     cve_index: Sequence[Mapping[str, Any]],
+    *,
+    context_for_finding: Callable[[PlatformFinding], DossierContext] | None = None,
 ) -> list[tuple[PlatformFinding, str]]:
     """Render dossiers for every finding, highest severity first.
 
@@ -573,6 +615,8 @@ def generate_all_dossiers(
     ``LIMA-FIND-<year>-NNN`` in that order.  When ``context.cve_ids`` is
     empty, each finding's CVE list is filled by the offline three-key
     :func:`match_cve` against ``cve_index`` (no match stays no match).
+    ``context_for_finding`` optionally supplies evidence scoped to each
+    finding while preserving batch ordering and unique internal ids.
     """
 
     if not isinstance(context, DossierContext):
@@ -589,18 +633,21 @@ def generate_all_dossiers(
     year = datetime.date.today().year
     results: list[tuple[PlatformFinding, str]] = []
     for index, finding in enumerate(ordered, start=1):
+        finding_context = (
+            context_for_finding(finding) if context_for_finding else context
+        )
         matched = match_cve(
-            context.component,
+            finding_context.component,
             finding.path,
-            context.known_commits or None,
+            finding_context.known_commits or None,
             cve_index,
         )
         item_context = replace(
-            context,
+            finding_context,
             internal_id=f"LIMA-FIND-{year}-{index:03d}",
-            cve_ids=context.cve_ids or matched,
-            poc_driver_code=context.poc_driver_code or finding.poc_driver_code,
-            experiment_log=context.experiment_log or finding.experiment_log,
+            cve_ids=finding_context.cve_ids or matched,
+            poc_driver_code=finding_context.poc_driver_code or finding.poc_driver_code,
+            experiment_log=finding_context.experiment_log or finding.experiment_log,
         )
         results.append((finding, generate_dossier(finding, item_context)))
     return results

@@ -53,6 +53,7 @@ COMPILE_FLAGS: Final = ("-fsanitize=address", "-g", "-O1")
 MAX_REPRO_SOURCES: Final = 16
 MAX_REPRO_DRIVER_BYTES: Final = 256 * 1024
 MAX_REPRO_PATH_CHARS: Final = 1024
+MAX_REPRO_SOURCE_OVERRIDES: Final = 4
 REPRO_STEP_OUTPUT_BYTES: Final = 1024 * 1024
 
 _C_SOURCE_SUFFIX: Final = ".c"
@@ -126,7 +127,7 @@ class ReproExecution:
     exit_code: int | None
     asan_report: dict[str, object] | None
     diagnostics: tuple[str, ...]
-    artifacts: dict[str, str]
+    artifacts: dict[str, object]
     elapsed_seconds: float
 
 
@@ -347,6 +348,42 @@ def _validate_driver_code(driver_code: object) -> str:
     if "\x00" in driver_code:
         raise ValueError("repro driver code must not contain NUL")
     return driver_code
+
+
+def _stage_source_overrides(
+    snapshot: PreparedSnapshot,
+    source_overrides: dict[str, str] | None,
+    deadline: AnalysisDeadline,
+) -> dict[str, str]:
+    """Stage and hash the patch-regression overrides ('' when none)."""
+
+    if source_overrides is None:
+        return {}
+    if not isinstance(source_overrides, dict) or not source_overrides:
+        raise ValueError("repro source overrides must be a non-empty mapping")
+    if len(source_overrides) > MAX_REPRO_SOURCE_OVERRIDES:
+        raise ValueError(
+            "repro source overrides exceed "
+            f"{MAX_REPRO_SOURCE_OVERRIDES} entries"
+        )
+    inventory = set(snapshot.files)
+    digests: dict[str, str] = {}
+    for path, content in source_overrides.items():
+        if (
+            not isinstance(path, str)
+            or not path
+            or path not in inventory
+        ):
+            raise ValueError(
+                "repro source override path is outside the verified snapshot"
+                " inventory"
+            )
+        if not isinstance(content, str) or not content:
+            raise ValueError("repro source override content must be text")
+        digests[path] = snapshot.stage_source_override(
+            path, content.encode("utf-8"), deadline=deadline,
+        )
+    return digests
 
 
 def _validate_sources(source_files: object, snapshot: PreparedSnapshot) -> tuple[str, ...]:
@@ -611,6 +648,7 @@ def run_repro(
     deadline: AnalysisDeadline,
     timeout_seconds: int = 60,
     settings: AnalyzerSettings | None = None,
+    source_overrides: dict[str, str] | None = None,
 ) -> ReproExecution:
     """Compile verified sources plus one untrusted driver and run it.
 
@@ -619,6 +657,13 @@ def run_repro(
     both steps run through the sandbox executor under the shared request
     deadline.  Every input is validated fail-closed before anything is
     staged or executed.
+
+    ``source_overrides`` (patch-regression replay, scoring item 6)
+    replaces the bytes of at most :data:`MAX_REPRO_SOURCE_OVERRIDES`
+    verified inventory files with patched content before compilation, so
+    one driver replays against its fix inside the same snapshot.  Paths
+    outside the verified inventory are rejected; the post-run inventory
+    re-verification anchors on override-adjusted expectations.
 
     Run-stage instrument noise: the ASan runtime itself crashes
     (SIGSEGV, empty stream) with measurable probability while rendering
@@ -640,6 +685,9 @@ def run_repro(
         raise ValueError("repro timeout must be a positive integer")
     sources = _validate_sources(source_files, snapshot)
     driver_text = _validate_driver_code(driver_code)
+    override_digests = _stage_source_overrides(
+        snapshot, source_overrides, deadline,
+    )
 
     tag = hashlib.sha256(driver_text.encode("utf-8")).hexdigest()[:8]
     driver_relative = f"{_DRIVER_DIRECTORY}/{_DRIVER_PREFIX}{tag}{_DRIVER_SUFFIX}"
@@ -652,6 +700,8 @@ def run_repro(
         "driver_sha256": hashlib.sha256(driver_text.encode("utf-8")).hexdigest(),
         "binary_sha256": "",
     }
+    if override_digests:
+        artifacts["source_overrides_sha256"] = override_digests
     try:
         with driver_target.open("xb") as handle:
             handle.write(driver_text.encode("utf-8"))

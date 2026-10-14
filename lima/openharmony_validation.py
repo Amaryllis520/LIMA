@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:  # pragma: no cover - annotation-only imports
+    from .agent_orchestrator import PlatformFinding
     from .repository_import import RepositoryImportPolicy
     from .workspace import RepositoryWorkspace
 
@@ -1093,32 +1094,116 @@ def _fixing_diff(git_root: Path, case: OpenHarmonyCase) -> str:
     return result.stdout
 
 
+def _final_finding(
+    result: OpenHarmonyValidationResult,
+) -> PlatformFinding | None:
+    """The replayed runtime-confirmed finding ('' when absent)."""
+
+    outcome = result.vulnerable.platform_outcome
+    if outcome is None:
+        return None
+    matching = [
+        finding for finding in outcome.findings
+        if finding.state == "runtime-confirmed"
+        and finding.cwe == result.case.cwe
+        and finding.path in result.case.target_paths
+    ]
+    if len(matching) != 1 or not matching[0].poc_driver_code:
+        return None
+    return matching[0]
+
+
 def _final_driver(result: OpenHarmonyValidationResult) -> tuple[str, str]:
     """The replayed driver and its target path ('' when absent)."""
 
-    for _record, outcome in (
-        (result.vulnerable, result.vulnerable.platform_outcome),
+    finding = _final_finding(result)
+    if finding is None:
+        return "", ""
+    return finding.poc_driver_code, finding.path
+
+
+def _impact_context(
+    finding: PlatformFinding, git_root: Path | None,
+) -> dict:
+    """Impact-mining fields for the dossier context (honest degradation).
+
+    Design section 7 wiring: blame this runtime-confirmed finding's line for the
+    introducing commit, follow its branch spread and version tags.  No
+    git root, no runtime confirmation or a mining error all degrade to the
+    pre-wiring dossier shape (empty fields, one bounded note) instead of
+    speculative output.
+    """
+
+    if git_root is None or finding.state != "runtime-confirmed":
+        return {}
+    from .impact_mining import ImpactMiningError, mine_impact
+
+    try:
+        report = mine_impact(git_root, finding.path, finding.line)
+    except ImpactMiningError as exc:
+        return {"impact_note": f"影响挖掘不可用: {str(exc)[:120]}"}
+    if report.introduced_commit is None:
+        return {"impact_note": "影响挖掘: 未能定位引入提交（行漂移或文件缺失）"}
+    return {
+        "impact_introduced": report.introduced_commit,
+        "impact_branches": report.branches,
+        "impact_versions": report.versions,
+        "known_commits": report.known_commits,
+    }
+
+
+def _regression_verdict(result: OpenHarmonyValidationResult) -> str:
+    """PoC regression verdict from the fixed-side replay (scoring item 6).
+
+    Require the complete, clean replay matrix and a passed pair.  Partial
+    observations survive budget exhaustion before the validator grades
+    them, so absence of a failure diagnostic is never proof of success.
+    """
+
+    fixed = result.fixed
+    rounds = len(fixed.replay_observations)
+    if rounds == 0:
+        return ""
+    codes = fixed.diagnostics
+    final = _final_finding(result)
+    if final is None:
+        return ""
+    observations = fixed.replay_observations
+    if "fixed-replay-hit" in codes or any(
+        experiment_matches_target(
+            observation, result.case.cwe, target_path=final.path,
+            driver_paths=(repro_driver_relative_path(final.poc_driver_code),),
+        ) for observation in observations
     ):
-        if outcome is None:
-            continue
-        for finding in outcome.findings:
-            if (
-                finding.state == "runtime-confirmed"
-                and finding.cwe == result.case.cwe
-                and finding.path in result.case.target_paths
-                and finding.poc_driver_code
-            ):
-                return finding.poc_driver_code, finding.path
-    return "", ""
+        return "未通过——同 PoC 在修复版本上仍触发目标缺陷"
+    if any(observation.stage == "transport-failed" for observation in observations):
+        return "未判定——修复版本上回放传输失败"
+    if "fixed-replay-compile-failure" in codes or any(
+        observation.stage != "run" for observation in observations
+    ):
+        return "未判定——修复版本上回放编译失败"
+    if "fixed-replay-unclean" in codes or any(
+        observation.error_type is not None or not observation.ok
+        or observation.exit_code != 0 for observation in observations
+    ):
+        return "未通过——修复版本上回放非干净运行（非目标错误）"
+    if (
+        rounds != _REPLAY_ROUNDS
+        or fixed.status != ValidationStatus.PASSED
+        or result.status != ValidationStatus.PASSED
+        or any(code.startswith("replay-budget-exhausted") for code in codes)
+    ):
+        return f"未判定——修复版本回放未完成验证（{rounds}/{_REPLAY_ROUNDS} 轮）"
+    return f"已通过——同 PoC 在修复版本 {rounds}/{rounds} 干净运行，不再触发"
 
 
 def _report_markdown(
     result: OpenHarmonyValidationResult, patch_digest: str,
+    git_root: Path | None = None,
 ) -> str:
     from .agent_report import DossierContext, generate_all_dossiers
 
     case = result.case
-    driver, target = _final_driver(result)
     outcome = result.vulnerable.platform_outcome
     context = DossierContext(
         repository=case.repository,
@@ -1130,12 +1215,22 @@ def _report_markdown(
         commit_range=(
             f"{case.vulnerable.commit[:12]}..{case.fixed.commit[:12]}"
         ),
-        poc_driver_code=driver,
-        cve_ids=(case.cve_id,),
-        patch_suggestion=case.remediation,
     )
+    final = _final_finding(result)
+
+    def context_for_finding(finding):
+        paired = finding is final
+        return replace(
+            context,
+            cve_ids=(case.cve_id,) if paired else (),
+            patch_suggestion=case.remediation if paired else "",
+            remediation_regression=_regression_verdict(result) if paired else "",
+            **_impact_context(finding, git_root),
+        )
+
     dossiers = generate_all_dossiers(
         outcome.findings if outcome is not None else (), context, (),
+        context_for_finding=context_for_finding,
     )
     replay_matrix = []
     for side, record in (
@@ -1260,7 +1355,8 @@ def write_validation_bundle(
         ).hexdigest()
 
         (staging / "report.md").write_text(
-            _report_markdown(result, patch_digest), encoding="utf-8",
+            _report_markdown(result, patch_digest, git_root=git_root),
+            encoding="utf-8",
         )
 
         _write_json(staging / "summary.json", {

@@ -5790,6 +5790,142 @@ class ReproTests(unittest.TestCase):
                         context_flags=bad,
                     )
 
+    def test_source_override_restores_frozen_modes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self._prepared_snapshot(
+                temporary, {"src/feature.c": "int f(void) { return 1; }\n"},
+            ) as snapshot:
+                target = snapshot.root / "src" / "feature.c"
+                original_parent_mode = target.parent.stat().st_mode & 0o777
+                original_file_mode = target.stat().st_mode & 0o777
+                snapshot.stage_source_override(
+                    "src/feature.c", b"int f(void) { return 2; }\n",
+                )
+                self.assertEqual(original_parent_mode,
+                                 target.parent.stat().st_mode & 0o777)
+                self.assertEqual(original_file_mode, target.stat().st_mode & 0o777)
+                snapshot.verify_inventory()
+                target.chmod(0o600)
+                target.write_bytes(b"int tampered;\n")
+                with self.assertRaisesRegex(ValueError, "bytes changed"):
+                    snapshot.verify_inventory()
+
+    def test_source_override_does_not_preserve_writable_mode_drift(self):
+        for fail_replace in (False, True):
+            with self.subTest(fail_replace=fail_replace):
+                with tempfile.TemporaryDirectory() as temporary:
+                    with self._prepared_snapshot(
+                        temporary, {"src/feature.c": "int f(void) { return 1; }\n"},
+                    ) as snapshot:
+                        target = snapshot.root / "src" / "feature.c"
+                        frozen_mode = target.stat().st_mode & 0o777
+                        target.chmod(0o600)
+                        if fail_replace:
+                            with patch("cxx_analyzer.snapshot.os.replace",
+                                       side_effect=PermissionError("forced failure")):
+                                with self.assertRaisesRegex(ValueError, "staging failed"):
+                                    snapshot.stage_source_override(
+                                        "src/feature.c", b"int fixed;\n",
+                                    )
+                        else:
+                            snapshot.stage_source_override("src/feature.c", b"int fixed;\n")
+                        self.assertEqual(frozen_mode, target.stat().st_mode & 0o777)
+                        snapshot.verify_inventory()
+
+    def test_source_override_failure_restores_frozen_modes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self._prepared_snapshot(
+                temporary, {"src/feature.c": "int f(void) { return 1; }\n"},
+            ) as snapshot:
+                target = snapshot.root / "src" / "feature.c"
+                original_parent_mode = target.parent.stat().st_mode & 0o777
+                original_file_mode = target.stat().st_mode & 0o777
+                with patch("cxx_analyzer.snapshot.os.replace",
+                           side_effect=PermissionError("forced staging failure")):
+                    with self.assertRaisesRegex(ValueError, "staging failed"):
+                        snapshot.stage_source_override("src/feature.c", b"int fixed;\n")
+                self.assertEqual(original_parent_mode,
+                                 target.parent.stat().st_mode & 0o777)
+                self.assertEqual(original_file_mode, target.stat().st_mode & 0o777)
+                snapshot.verify_inventory()
+
+    def test_run_repro_source_override_replaces_bytes_and_keeps_verify(self):
+        # Patch-regression replay (scoring item 6): the override lands in
+        # the request-private snapshot copy, the audit records its digest,
+        # and the post-run inventory re-verification accepts the
+        # override-adjusted expectations without loosening them for every
+        # other byte.
+        vulnerable = "int target_value(void) { return 1; }\n"
+        patched = "int target_value(void) { return 2; }\n"
+        driver_code = (
+            'extern "C" int target_value(void);\n'
+            "int main() { return target_value() == 2 ? 0 : 1; }\n"
+        )
+        tag = hashlib.sha256(driver_code.encode("utf-8")).hexdigest()[:8]
+        deadline = AnalysisDeadline.start(90)
+        with tempfile.TemporaryDirectory() as temporary:
+            with self._prepared_snapshot(
+                temporary, {"src/feature.c": vulnerable},
+            ) as snapshot:
+                calls = []
+                responses = (
+                    {
+                        "execution": {"status": "completed", "returncode": 0},
+                        "produce_binary": f"repro_bin_{tag}",
+                    },
+                    {
+                        "execution": {"status": "completed", "returncode": 0},
+                        "produce_binary": f"repro_bin_{tag}",
+                    },
+                )
+                with patch(
+                    "cxx_analyzer.repro.run_step",
+                    side_effect=self._recorded_run_step(calls, responses, snapshot),
+                ):
+                    result = repro.run_repro(
+                        snapshot,
+                        ("src/feature.c",),
+                        driver_code,
+                        settings=self._settings(),
+                        deadline=deadline,
+                        timeout_seconds=30,
+                        source_overrides={"src/feature.c": patched},
+                    )
+                self.assertEqual(
+                    patched,
+                    (snapshot.root / "src" / "feature.c").read_text(
+                        encoding="utf-8"
+                    ),
+                )
+                snapshot.verify_inventory()
+                self.assertIn("source_overrides_sha256", result.artifacts)
+                self.assertEqual(
+                    hashlib.sha256(patched.encode("utf-8")).hexdigest(),
+                    result.artifacts["source_overrides_sha256"][
+                        "src/feature.c"
+                    ],
+                )
+
+    def test_run_repro_rejects_override_outside_inventory(self):
+        driver_code = "int main() { return 0; }\n"
+        deadline = AnalysisDeadline.start(90)
+        with tempfile.TemporaryDirectory() as temporary:
+            with self._prepared_snapshot(
+                temporary, {"src/feature.c": "int f(void) { return 1; }\n"},
+            ) as snapshot:
+                with self.assertRaisesRegex(
+                    ValueError, "outside the verified"
+                ):
+                    repro.run_repro(
+                        snapshot,
+                        ("src/feature.c",),
+                        driver_code,
+                        settings=self._settings(),
+                        deadline=deadline,
+                        timeout_seconds=30,
+                        source_overrides={"src/other.c": "int g;\n"},
+                    )
+
     def test_run_repro_c_source_gets_compdb_context_flags(self):
         # feature.c only defines pilot_magic under -DPILOT_FLAG, which is
         # declared by the snapshot's compile_commands.json: the recorded

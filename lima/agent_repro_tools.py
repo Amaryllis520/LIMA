@@ -48,6 +48,7 @@ from .cxx_memory import (
     ReproResponse,
     _validate_repro_driver_code,
     _validate_repro_requested_sources,
+    _validate_repro_source_overrides,
 )
 from .runtime import AgentTool
 
@@ -360,6 +361,73 @@ class ReproWorkbench:
                 # the client itself.
                 response = self._client.repro_compile_run(
                     repo, snapshot, sources, driver
+                )
+        except (CxxAnalyzerUnavailable, CxxAnalyzerProtocolError) as exc:
+            return _degraded_observation(exc)
+        observation = _observation_from_response(response)
+        self._budget.consume(bytes=observation_payload_bytes(observation))
+        return observation
+
+    def run_patch_regression(
+        self,
+        repository_key: str,
+        snapshot_hash: str,
+        target_path: str,
+        patched_source: str,
+        driver_code: str,
+        *,
+        timeout: int | None = None,
+    ) -> ExperimentObservation:
+        """Replay one PoC driver against a patched source file.
+
+        Scoring item 6 product step ("the PoC no longer triggers after
+        the patch"): the same driver that confirmed the finding is
+        compiled against the patched translation unit inside the same
+        verified snapshot, via the analyzer's source-override replay.
+        Budget discipline mirrors :meth:`run_experiment` -- one call plus
+        the exact driver and patch bytes; nothing is refunded.
+
+        Reading the observation: a clean run (``ok`` true, no error type)
+        supports "patch holds"; the same ASan error as the original
+        confirmation means the patch does not fix the audited path;
+        compile failures are inconclusive about the patch (the patched
+        unit may not even build).
+        """
+
+        repo = _require_text(repository_key, "repository_key")
+        snapshot = _require_snapshot_hash(snapshot_hash)
+        target = _require_text(target_path, "target_path")
+        try:
+            patched = _validate_repro_source_overrides({target: patched_source})[target]
+        except CxxAnalyzerProtocolError as exc:
+            raise ValueError(f"invalid patched_source ({exc})") from exc
+        driver = _require_driver_code(driver_code)
+        if (
+            timeout is not None
+            and (
+                isinstance(timeout, bool)
+                or not isinstance(timeout, int)
+                or timeout <= 0
+            )
+        ):
+            raise ValueError("timeout must be a positive integer or None")
+        effective_timeout = timeout if timeout is not None else self.default_timeout
+        self._budget.consume(
+            calls=1,
+            bytes=len(driver.encode("utf-8"))
+            + len(patched.encode("utf-8")),
+        )
+        try:
+            if self._client_accepts_timeout:
+                response = self._client.repro_compile_run(
+                    repo, snapshot, (target,), driver,
+                    timeout=effective_timeout,
+                    source_overrides={target: patched},
+                )
+            else:
+                response = self._client.repro_compile_run(
+                    repo, snapshot, (target,), driver,
+                    source_overrides={target: patched},
                 )
         except (CxxAnalyzerUnavailable, CxxAnalyzerProtocolError) as exc:
             return _degraded_observation(exc)
