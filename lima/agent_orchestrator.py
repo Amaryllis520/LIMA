@@ -814,6 +814,12 @@ def platform_rule_id(cwe: str) -> str:
 _CACHE_PAYLOAD_VERSION: Final = "platform-target-outcome-v1"
 
 
+def _prompt_digest(prompt: str) -> str:
+    """SHA-256 of one participating system prompt (cache-key input)."""
+
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
 def _target_cache_fingerprints(
     target: ScoutTarget,
     *,
@@ -832,6 +838,16 @@ def _target_cache_fingerprints(
         f"mode={mode}",
         f"source-mode={source_mode}",
         f"dialogue-rounds={dialogue_rounds}",
+        # The cached journey is produced by these prompts, so their
+        # digests belong to the key: recipe, prompt-text or registered
+        # pack addenda changes must invalidate instead of replaying a
+        # stale Finding. Computed per call (registry packs may register
+        # after import); the prompt is a few KB so this is cheap.
+        (
+            "specialist-prompt-sha256="
+            f"{_prompt_digest(_system_platform_specialist())}"
+        ),
+        f"critic-prompt-sha256={_prompt_digest(_SYSTEM_PLATFORM_CRITIC)}",
         f"lead-id={target.lead_id}",
         f"path={target.path}",
         f"line={target.line}",
