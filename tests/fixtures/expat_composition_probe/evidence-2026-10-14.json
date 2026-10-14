@@ -13,16 +13,16 @@
     "checkout": "expat-up-vuln",
     "commit": "5ac714074d2639e0b8bb82aa73ef51c4f7498d29",
     "result": "heap-use-after-free (ASan, READ of size 8)",
-    "crash_site": "hashTableIterInit (expat/lib/xmlparse.c:7148) <- dtdReset (xmlparse.c:6738) <- XML_ParserReset (xmlparse.c:1218) <- probe.c:115",
-    "trigger_ordinal": 2,
-    "ordinal_convention": "ordinal N = the (N+1)th allocation from XML_ExternalEntityParserCreate fails; ordinal 2 equals the official test's allocation_count=3 (third allocation = the encoding-name copy in parserInit)",
-    "log": ".zcode/reports/expat-probe-vuln-2026-10-14.log (local maintainer copy)"
+    "crash_site": "hashTableIterInit (expat/lib/xmlparse.c:7148) <- dtdReset (xmlparse.c:6738) <- XML_ParserReset (xmlparse.c:1218) <- probe.c reset step",
+    "trigger_ordinal": 3,
+    "ordinal_convention": "ordinal N allows the first N allocations counted from the XML_ExternalEntityParserCreate call and fails the next one -- the same allow-N-then-fail semantics as the official duff allocator. Ordinal 3 therefore equals the official allocation_count=3: the failing allocation is the FOURTH from the create, the encoding-name copy in parserInit (the site the official comment names). Empirically ordinals 1 and 2 also failed the create but the parent reset survived; the UAF fired at ordinal 3 (see the committed log).",
+    "log": "tests/fixtures/expat_composition_probe/evidence-2026-10-14.vuln.log (committed; maintainer copy .zcode/reports/expat-probe-vuln-2026-10-14.log)"
   },
   "fixed": {
     "checkout": "expat-up-fixed",
     "commit": "56967f83d68d5fc750f9e66a9a76756c94c7c173",
     "result": "clean: sweep completed all 64 ordinals, zero crashes, normal exit",
-    "log": ".zcode/reports/expat-probe-fixed-2026-10-14.log (local maintainer copy)"
+    "log": "tests/fixtures/expat_composition_probe/evidence-2026-10-14.fixed.log (committed; maintainer copy .zcode/reports/expat-probe-fixed-2026-10-14.log)"
   },
   "official_reference": {
     "test": "test_alloc_reset_after_external_entity_parser_create_fail (expat/tests/runtests.c, expat-up-fixed): handler rejects non-NULL context, encoding name \"UTF-8\" (comment: needs something non-NULL), allocation_count=3, XML_ParserReset(g_parser, NULL) after the failed create",

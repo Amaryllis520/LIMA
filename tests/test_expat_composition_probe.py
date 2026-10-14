@@ -75,10 +75,29 @@ class EvidenceRecordTests(unittest.TestCase):
         self.assertIn("heap-use-after-free", vulnerable["result"])
         self.assertIn("hashTableIterInit", vulnerable["crash_site"])
         self.assertIn("XML_ParserReset", vulnerable["crash_site"])
-        self.assertEqual(2, vulnerable["trigger_ordinal"])
+        self.assertEqual(3, vulnerable["trigger_ordinal"])
         self.assertIn("5ac71407", vulnerable["commit"])
         self.assertIn("clean", fixed["result"])
         self.assertIn("56967f83", fixed["commit"])
+
+    def test_ordinal_convention_matches_the_official_allocator(self):
+        # Both conventions allow N allocations then fail the next one:
+        # the official duff allocator with allocation_count=3 lets three
+        # through and fails the fourth (the encoding-name copy in
+        # parserInit, the site its comment names).  The probe's ordinal
+        # must therefore equal the official count at the same site.
+        convention = self.evidence["vulnerable"]["ordinal_convention"]
+        self.assertIn("allows the first N allocations", convention)
+        self.assertIn("allocation_count=3", convention)
+        self.assertIn("FOURTH", convention)
+
+    def test_evidence_logs_are_committed(self):
+        for record in (self.evidence["vulnerable"], self.evidence["fixed"]):
+            committed = Path(record["log"].split(" (committed;")[0])
+            self.assertTrue(
+                committed.is_file(),
+                f"committed log missing: {committed}",
+            )
 
     def test_official_reference_pins_the_corrected_semantics(self):
         reference = self.evidence["official_reference"]
@@ -95,6 +114,78 @@ class EvidenceRecordTests(unittest.TestCase):
         self.assertIn("not a platform runtime-confirmed", self.evidence["what"])
         self.assertIn("does NOT re-run the container build",
                       self.evidence["honesty"])
+
+
+class LogCrossCheckTests(unittest.TestCase):
+    """The evidence numbers must match the actual saved run output.
+
+    Review correction: an earlier record said ordinal 2 triggered the
+    UAF; the log shows ordinals 1 and 2 surviving the reset and ordinal
+    3 firing.  These tests re-derive the trigger ordinal from the
+    committed log so the JSON can never drift from the raw evidence.
+    """
+
+    def setUp(self):
+        self.evidence = json.loads(
+            (_FIXTURE / "evidence-2026-10-14.json").read_text(encoding="utf-8")
+        )
+        self.vuln_log = (_FIXTURE / "evidence-2026-10-14.vuln.log").read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines()
+        self.fixed_log = (_FIXTURE / "evidence-2026-10-14.fixed.log").read_text(
+            encoding="utf-8", errors="replace"
+        ).splitlines()
+
+    def test_trigger_ordinal_derived_from_the_log(self):
+        asan_lines = [
+            i for i, line in enumerate(self.vuln_log)
+            if "ERROR: AddressSanitizer" in line
+        ]
+        self.assertTrue(asan_lines, "vulnerable log has no ASan report")
+        sweeps_before = [
+            line for line in self.vuln_log[: asan_lines[0]]
+            if line.startswith("sweep ordinal ")
+        ]
+        derived = int(sweeps_before[-1].rsplit(" ", 1)[1])
+        self.assertEqual(
+            self.evidence["vulnerable"]["trigger_ordinal"], derived,
+            "evidence trigger_ordinal disagrees with the committed log",
+        )
+
+    def test_earlier_ordinals_survived_the_reset(self):
+        trigger = self.evidence["vulnerable"]["trigger_ordinal"]
+        survived = {
+            int(line.split()[1])
+            for line in self.vuln_log
+            if line.endswith("survived reset+free")
+        }
+        self.assertEqual(set(range(1, trigger)), survived)
+
+    def test_crash_signature_matches_the_record(self):
+        joined = "\n".join(self.vuln_log)
+        self.assertIn("heap-use-after-free", joined)
+        self.assertIn("hashTableIterInit", joined)
+        self.assertIn("xmlparse.c:7148", joined)
+        self.assertIn("XML_ParserReset", joined)
+        self.assertIn("dtdReset", joined)
+
+    def test_fixed_log_is_clean_and_complete(self):
+        joined = "\n".join(self.fixed_log)
+        self.assertNotIn("AddressSanitizer", joined)
+        self.assertIn("sweep done: 64 ordinals, no crash", joined)
+
+
+class RunnerContractTests(unittest.TestCase):
+    """The dual-control runner must fail closed on unexpected results."""
+
+    def test_runner_exits_nonzero_when_the_control_does_not_hold(self):
+        script = (_FIXTURE / "run_dual_control.sh").read_text(encoding="utf-8")
+        self.assertIn("set -e", script)
+        self.assertIn("DUAL_CONTROL_FAILED", script)
+        self.assertIn('!= "asan-crash"', script)
+        self.assertIn('!= "clean"', script)
+        self.assertIn("exit 1", script)
+        self.assertIn("exit 2", script)
 
 
 class RecipeProbeConsistencyTests(unittest.TestCase):

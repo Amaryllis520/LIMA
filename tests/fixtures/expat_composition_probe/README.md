@@ -12,7 +12,7 @@
 | 外部子集 | `<!DOCTYPE doc SYSTEM 'foo'><doc/>` | 同 |
 | 参数实体解析 | `XML_SetParamEntityParsing(..., XML_PARAM_ENTITY_PARSING_ALWAYS)` | 同 |
 | context 语义 | handler 拒绝非 NULL context（外部子集触发时 context == NULL） | 同；NULL context 即 `if (! context) newDtd = oldDtd;` 的共享父 DTD 路径 |
-| 失败定位 | 非 NULL 编码名 `"UTF-8"`（注释 "needs something non-NULL"），`allocation_count=3` 打在 parserInit 的编码名复制 | 同，`"UTF-8"` + 扫描序数（ordinal 2 ≡ 官方第 3 次分配） |
+| 失败定位 | 非 NULL 编码名 `"UTF-8"`（注释 "needs something non-NULL"），`allocation_count=3` 允许 3 次分配后第 4 次——parserInit 的编码名复制——失败 | 同；扫描序数 N 的语义一致（允许 N 次后下一次失败），实测序数 3 触发（≡官方 count=3），序数 1/2 创建失败但父重置存活 |
 | 失败后父操作 | `XML_ParserReset(g_parser, NULL)` | 同 |
 
 **不要**把 NULL context 解读为"脱离真实路径"：NULL 恰是该案例共享 DTD 的合法
