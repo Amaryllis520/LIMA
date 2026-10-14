@@ -1599,6 +1599,57 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertIn("never stub a function on", _SPECIALIST_PLAYBOOK)
         self.assertIn("shrink timing windows", _SPECIALIST_PLAYBOOK)
 
+    def test_playbook_carries_battle_tested_cwe_recipes(self):
+        # Frozen from the sprint plan V02: the generic playbook gains a
+        # CWE-keyed recipe layer distilled from the expat allocator-
+        # injection campaign and the dsoftbus/avrcp timing-hammer battles.
+        # Only CWEs with battle evidence carry recipes; every other CWE
+        # stays on the generic playbook.
+        from lima.agent_orchestrator import (
+            _SPECIALIST_CWE_RECIPES,
+            _specialist_recipe_appendix,
+            _system_platform_specialist,
+        )
+        from lima.vuln_packs import registry_cwe_display_order
+
+        self.assertEqual(set(_SPECIALIST_CWE_RECIPES), {"CWE-416", "CWE-476"})
+        self.assertTrue(
+            set(_SPECIALIST_CWE_RECIPES).issubset(
+                set(registry_cwe_display_order())
+            )
+        )
+
+        appendix = _specialist_recipe_appendix()
+        system = _system_platform_specialist()
+        self.assertIn(appendix, system)
+        self.assertIn("[CWE-416]", appendix)
+        self.assertIn("[CWE-476]", appendix)
+        self.assertLess(
+            appendix.index("[CWE-416]"), appendix.index("[CWE-476]")
+        )
+        # Deterministic assembly: same call, same bytes.
+        self.assertEqual(_specialist_recipe_appendix(), appendix)
+
+        # expat lineage: counting allocator, ordinal sweep, build-gate
+        # reachability honesty.
+        uaf = _SPECIALIST_CWE_RECIPES["CWE-416"]
+        self.assertIn("allocation ordinal", uaf)
+        self.assertIn("sweep N", uaf)
+        self.assertIn("build configuration", uaf)
+        self.assertIn("unreachable in that build", uaf)
+        # dsoftbus/avrcp lineage: caller-precondition replication, the
+        # second-lookup window, the two-thread hammer, noise discipline.
+        self.assertIn("verbatim", uaf)
+        self.assertIn("second lookup", uaf)
+        self.assertIn("two threads", uaf)
+        self.assertIn("mmap noise", uaf)
+
+        # CWE-476 TOCTOU window between the caller's guarded lookup and
+        # the callee's second lookup, raced by concurrent removal.
+        null = _SPECIALIST_CWE_RECIPES["CWE-476"]
+        self.assertIn("second independent lookup", null)
+        self.assertIn("concurrent removal", null)
+
     def test_critic_enforces_ownership_strip_and_stub_validity(self):
         # Frozen from the avrcp finding: naive null-check fixes of
         # temporary-extracted raw pointers leave the UAF path open, and
