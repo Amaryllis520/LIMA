@@ -245,12 +245,73 @@ _SPECIALIST_PLAYBOOK: Final = (
 )
 
 
+# CWE-keyed recipe layer (V02): concrete trigger combinations distilled
+# from real campaigns, on top of the generic playbook. Only CWEs with
+# battle evidence carry a recipe; every other CWE stays generic, and new
+# keys require a frozen-test update by design.
+_SPECIALIST_CWE_RECIPES: Final[dict[str, str]] = {
+    "CWE-416": (
+        "Recipe lineage A -- injected-allocator error paths (expat "
+        "campaign): when the fault lives on an allocation-failure or "
+        "cleanup path of a library that accepts a custom memory suite at "
+        "creation (e.g. *_MM-style constructors), create the object "
+        "through those hooks and make the suite deterministic: succeed "
+        "exactly N allocations, fail the N+1st, and sweep N run by run -- "
+        "the faulting cleanup fires at one specific allocation ordinal, "
+        "and one generic OOM injection rarely lands on it. Combine the "
+        "sweep with the feature gate the path needs (external entities, "
+        "shared DTD, ...): first verify the target's build configuration "
+        "actually enables that feature; if the define is absent the "
+        "fault is unreachable in that build and the experiment must say "
+        "so instead of adding the define itself.\n"
+        "Recipe lineage B -- lifetime-race timing hammer (dsoftbus/avrcp "
+        "battles): replicate the real caller's precondition sequence "
+        "verbatim (guards, lookups, state checks) before the vulnerable "
+        "call -- the race window usually sits between an earlier "
+        "validated lookup and a second lookup inside the callee. Then "
+        "hammer with two threads: one loops the use path (re-register, "
+        "timeout, callback), the other loops the removal path (disconnect "
+        "-> delete resource); use 10-shot bursts, and millions of "
+        "iterations for the control build. Judge by an ASan report "
+        "attributed to the target TU; an empty-log bare crash may be ASan "
+        "startup mmap noise and proves nothing."
+    ),
+    "CWE-476": (
+        "Recipe lineage -- TOCTOU second lookup (avrcp battle): when the "
+        "caller dereference-guards its own lookup but the callee performs "
+        "a second independent lookup before dereferencing, the null "
+        "window is exactly between the two: race the concurrent removal "
+        "(disconnect / map erase) into that window after the caller's own "
+        "guard has passed. Check the lookup helper's API contract first: "
+        "a by-value smart-pointer getter returning an empty value on "
+        "missing entries exposes both a null dereference and a "
+        "dangling-object race at the same site when the raw pointer is "
+        "stripped with .get()."
+    ),
+}
+
+
+def _specialist_recipe_appendix() -> str:
+    """Deterministic CWE-keyed recipe block in registry display order."""
+
+    lines = [
+        "CWE-keyed recipes (battle-tested lineages; the generic playbook "
+        "above still governs everything else):"
+    ]
+    for cwe in registry_cwe_display_order():
+        recipe = _SPECIALIST_CWE_RECIPES.get(cwe)
+        if recipe is not None:
+            lines.append(f"[{cwe}] {recipe}")
+    return "\n".join(lines)
+
+
 def _system_platform_specialist() -> str:
     return (
         f"You are the {SPECIALIST_ROLE} agent in the LIMA vulnerability platform. "
         "Form one concrete vulnerability hypothesis for the target: state what is "
         "wrong, the trigger path, the CWE class, and write the PoC driver for the "
         f"reproduction workbench. {_SPECIALIST_PLAYBOOK} "
+        f"{_specialist_recipe_appendix()} "
         f"{_UNTRUSTED_DATA_RULE} {_platform_schema()}"
         + registry_prompt_addenda()
     )
@@ -753,6 +814,12 @@ def platform_rule_id(cwe: str) -> str:
 _CACHE_PAYLOAD_VERSION: Final = "platform-target-outcome-v1"
 
 
+def _prompt_digest(prompt: str) -> str:
+    """SHA-256 of one participating system prompt (cache-key input)."""
+
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
 def _target_cache_fingerprints(
     target: ScoutTarget,
     *,
@@ -771,6 +838,16 @@ def _target_cache_fingerprints(
         f"mode={mode}",
         f"source-mode={source_mode}",
         f"dialogue-rounds={dialogue_rounds}",
+        # The cached journey is produced by these prompts, so their
+        # digests belong to the key: recipe, prompt-text or registered
+        # pack addenda changes must invalidate instead of replaying a
+        # stale Finding. Computed per call (registry packs may register
+        # after import); the prompt is a few KB so this is cheap.
+        (
+            "specialist-prompt-sha256="
+            f"{_prompt_digest(_system_platform_specialist())}"
+        ),
+        f"critic-prompt-sha256={_prompt_digest(_SYSTEM_PLATFORM_CRITIC)}",
         f"lead-id={target.lead_id}",
         f"path={target.path}",
         f"line={target.line}",
