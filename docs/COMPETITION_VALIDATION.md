@@ -239,7 +239,7 @@ Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、�
 | r3 | rounds=2 | failed（no-matching） | 1494 s / 100 调用 / 16 线索，scout 轮数耗尽（预算剩 60）；3 个 semantic-supported 全落正确函数（doProlog:4603×2=CVE-2022-43680 本体、storeEntityValue:6073） |
 | r4 | rounds=3 | failed（no-matching） | 1022 s / 71 调用；3 个 semantic-supported（doProlog:4603、2738、6806） |
 | r5 | rounds=3，配方 v1 首战 | inconclusive（required-review 未满足） | 1141 s / 76 调用；3 finding 全钉 4603（CWE-416×2 + CWE-415）×8 轮 = 24 实验全清洁（driver sha 全在、零编译错）。当日重建 analyzer 丢失 AST 128 MB 预算 → ast-output-limit → xmlparse.c 必需审阅跳过 → fixed-not-run |
-| r6 | rounds=3，AST 预算已修 | inconclusive（required-review 未满足） | 1928 s / 146 调用；8 finding（4603×4 + 2738/3240/5769/6806，全 CWE-416）×8 轮 = 64 实验全清洁。驱动已采用配方（`XML_ParserCreate_MM` + 计数分配器 + 单驱动内扫 N 0–400 + 内部子集 + 外部解析器创建 + 父解析器释放），但只声明**内部**实体、`XML_ExternalEntityParserCreate(p, NULL, NULL)` 空 context 脱离真实外部实体路径——组合步缺失，配方 v2（PR #302）已补 |
+| r6 | rounds=3，AST 预算已修 | inconclusive（required-review 未满足） | 1928 s / 146 调用；8 finding（4603×4 + 2738/3240/5769/6806，全 CWE-416）×8 轮 = 64 实验全清洁。驱动已采用配方（`XML_ParserCreate_MM` + 计数分配器 + 单驱动内扫 N 0–400 + 内部子集 + 外部解析器创建 + 父解析器释放），但缺官方触发组合的三个要件：无外部 SYSTEM 子集与参数实体解析配置（handler 不触发）、编码名传 NULL（失败未定位到 parserInit 编码名复制）、失败后未复用父解析器。注：context==NULL 本身是共享父 DTD 的合法必经语义（2026-10-14 复核纠正，见 §3 补充 2 之 6），此前"空 context 脱离真实路径"的判读有误。配方 v2（PR #302，含纠错与机制探针） |
 
 **结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
 **检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
@@ -257,12 +257,17 @@ bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
 
 1. **检测层更强了**：r6 产 8 个 semantic-supported，其中 4 个钉 CVE 本体位
    4603；配方未让检测跑偏。
-2. **实验层仍未闭合，但缺口已定位到组合步**：r6 驱动执行了配方 90%
-   （MM 套件/计数分配器/扫 N/内部子集/子解析器/父释放），漏的正是
-   CVE-2022-43680 的决定性组合：**SYSTEM 外部实体 + handler 内带真实
-   context 创建子解析器 + 失败后复用父解析器**。官方回归测试
-   （test_alloc_reset_after_external_entity_parser_create_fail）即此形态。
-   配方 v2（PR #302）把该组合写成硬规则；r7 待其合并后打。
+2. **实验层仍未闭合，但缺口已定位到组合步（2026-10-14 复核纠错版）**：
+   r6 驱动执行了配方 90%（MM 套件/计数分配器/扫 N/内部子集/子解析器/
+   父释放），漏的是官方回归测试
+   （test_alloc_reset_after_external_entity_parser_create_fail）的三个要件：
+   **外部 SYSTEM 子集 + `XML_PARAM_ENTITY_PARSING_ALWAYS`**（handler 才会
+   触发）、**非空编码名 "UTF-8"**（把分配失败定位到 parserInit 的编码名
+   复制）、**失败后 `XML_ParserReset` 复用父解析器**。勘误：早前判读
+   "空 context 脱离真实路径"有误——`context==NULL` 恰是 `if (! context)
+   newDtd = oldDtd;` 共享父 DTD 的合法必经语义，官方 handler 拒绝的是
+   非 NULL context。配方 v2（PR #302，含纠错）与机制探针双对照已按正确
+   组合落地（见第 6 条）；r7 待其合并后打。
 3. **案例判定层出现新结构性墙**：r4 之后合入的评审第 5 轮 P2 加固规定
    线索封顶时被裁线索的 TU 记 unreviewed → 必需审阅（target_paths 全集）
    未满足 → 整局 inconclusive + fixed-not-run。glm-5.3 在 xmlparse.c
@@ -278,6 +283,15 @@ bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
    faulthandler 看门狗判活。
 5. **V02 状态**：runtime-confirmed 自动命中仍开放，止损线 10-19 晚；
    r5/r6 bundle：容器 `/app/output/openharmony/pilot-r{5,6}`。
+6. **组合机理探针双对照（2026-10-14，PR #302 附带）**：按官方用例
+   复刻的探针（`tests/fixtures/expat_composition_probe/`，扫描序数替代
+   固定 count=3），同驱动同配置在冻结对上运行（chain-probe，clang-14
+   +ASan，XML_DTD=1 overlay 两侧逐字节一致）：**vulnerable `5ac71407`
+   于序数 2（≡官方第 3 次分配）heap-use-after-free**，栈
+   `XML_ParserReset → dtdReset → hashTableIterInit（xmlparse.c:7148）`，
+   与 2026-10-04 手动实证同归因点；**fixed `56967f83` 全部 64 序数
+   清洁**。此为探针机制验证（正负对照），不是平台 runtime-confirmed，
+   也不是模型战役结果；证据 JSON 入夹具目录，日志存维护者本地。
 
 ### §3 补充 3：V06 avrcp 补丁双对照复跑（2026-10-14）
 
