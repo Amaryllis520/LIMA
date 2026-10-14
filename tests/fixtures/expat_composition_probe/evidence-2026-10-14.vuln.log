@@ -1,0 +1,61 @@
+sweep ordinal 1
+ordinal 1: create failed as designed
+ordinal 1 survived reset+free
+sweep ordinal 2
+ordinal 2: create failed as designed
+ordinal 2 survived reset+free
+sweep ordinal 3
+ordinal 3: create failed as designed
+=================================================================
+==872==ERROR: AddressSanitizer: heap-use-after-free on address 0x6130000003e8 at pc 0x55dfb2da9308 bp 0x7fff2c655580 sp 0x7fff2c655578
+READ of size 8 at 0x6130000003e8 thread T0
+    #0 0x55dfb2da9307 in hashTableIterInit /repositories/expat-up-vuln/expat/lib/xmlparse.c:7148:20
+    #1 0x55dfb2da9307 in dtdReset /repositories/expat-up-vuln/expat/lib/xmlparse.c:6738:3
+    #2 0x55dfb2da9307 in XML_ParserReset /repositories/expat-up-vuln/expat/lib/xmlparse.c:1218:3
+    #3 0x55dfb2da70c2 in main /src/tests/fixtures/expat_composition_probe/probe.c:115:5
+    #4 0x7d86b057a249 in __libc_start_call_main csu/../sysdeps/nptl/libc_start_call_main.h:58:16
+    #5 0x7d86b057a304 in __libc_start_main csu/../csu/libc-start.c:360:3
+    #6 0x55dfb2ce9360 in _start (/tmp/expat-composition-probe/probe_expat-up-vuln+0x2f360) (BuildId: 22b246c752b71e7a7abdc1f4a46e3f7e21320fa4)
+
+0x6130000003e8 is located 40 bytes inside of 360-byte region [0x6130000003c0,0x613000000528)
+freed by thread T0 here:
+    #0 0x55dfb2d6bf02 in free (/tmp/expat-composition-probe/probe_expat-up-vuln+0xb1f02) (BuildId: 22b246c752b71e7a7abdc1f4a46e3f7e21320fa4)
+    #1 0x55dfb2da7285 in probe_free /src/tests/fixtures/expat_composition_probe/probe.c:55:35
+
+previously allocated by thread T0 here:
+    #0 0x55dfb2d6c1ae in __interceptor_malloc (/tmp/expat-composition-probe/probe_expat-up-vuln+0xb21ae) (BuildId: 22b246c752b71e7a7abdc1f4a46e3f7e21320fa4)
+    #1 0x55dfb2da7248 in probe_malloc /src/tests/fixtures/expat_composition_probe/probe.c:47:10
+
+SUMMARY: AddressSanitizer: heap-use-after-free /repositories/expat-up-vuln/expat/lib/xmlparse.c:7148:20 in hashTableIterInit
+Shadow bytes around the buggy address:
+  0x0c267fff8020: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c267fff8030: fd fd fd fd fd fa fa fa fa fa fa fa fa fa fa fa
+  0x0c267fff8040: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c267fff8050: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c267fff8060: fd fd fd fd fd fd fd fd fd fd fd fd fd fa fa fa
+=>0x0c267fff8070: fa fa fa fa fa fa fa fa fd fd fd fd fd[fd]fd fd
+  0x0c267fff8080: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c267fff8090: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c267fff80a0: fd fd fd fd fd fa fa fa fa fa fa fa fa fa fa fa
+  0x0c267fff80b0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x0c267fff80c0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==872==ABORTING
