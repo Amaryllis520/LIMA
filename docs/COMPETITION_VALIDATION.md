@@ -245,6 +245,8 @@ Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、�
 | r9 | rounds=3 | inconclusive（provider 瞬断） | 642 s / 34 调用；上游 502/504 瞬断击中必需 LLM 的平台评审段 → `vulnerable-review-failed`（AC5 类合同正确触发）；网关两次掉线（进程退出）分别致 r7 前一轮与 r9 首发中止，后者复跑为本轮 |
 | r10 | rounds=3，配额缩放工作树（`c6d01a5`=PR #303） | inconclusive | 1216 s / 76 调用；**3 finding 含 4603（配方 v2 时代首次锁定 CVE 本体位）**；18 线索留存（新配额生效）但模型发现 ≥19 仍触顶→unreviewed→fixed-not-run；8 轮实验全部 **compile 阶段失败**（8 个不同驱动 hash=盲改循环，`error_type=null` 未分类编译失败）。**手动抽验（决定性）**：最终 4603 驱动含完整 v2 组合（SYSTEM 子集+ALWAYS+handler 内 NULL context+"UTF-8"+失败后父解析器操作），仅一处签名笔误 `void inject_realloc`（应为 `void *`）；**修此一字即触发 heap-use-after-free（`XML_ParserFree → dtdDestroy → hashTableIterInit@xmlparse.c:7148`，与官方机制探针同归因）**，日志存维护者本地 |
 | r11 | rounds=3，编译反馈环工作树（`5c252ce`=PR #304） | inconclusive（fixed 侧 discovery 窗 502/504 瞬断） | 1386 s / 42 调用；**反馈环生效实锤**：2 finding×8 轮全部 `error_type=compile-failed` 且 diagnostic（编译器 stderr）入台账并回喂 critic；模型**机械修复能力实证**（第 1 轮 `_MS` 拼写错→第 2 轮修掉→`_MM` 参数个数→再修掉）。**新墙=链接闭包**：平台仅链目标 TU，expat 的 xmltok/xmlrole 缺席（undefined reference to XmlGetUtf8InternalEncoding）；模型闭包思路两次正确、路径两次皆错（`source/expat/lib/xmltok.c`、`expat/lib/xmltok.c`——驱动在 build/ 编译，-I 只有 `-I_overlay -Iexpat/lib`，正确写法是裸名 `#include "xmltok.c"`）；第 7–8 轮又失 XMLCALL 调用约定。配方 v3（裸名兄弟源 + XMLCALL）已写为 PR #305 |
+| r12 | rounds=3，叠栈工作树（#304+#305） | inconclusive（provider 瞬断） | 539 s / 31 调用；上游 502/504 瞬断再次击中必需评审段（当日第 4 次上游瞬断：r8 一窗、r9 整轮、r11 fixed 侧一窗、r12 整轮）；5 次稳定性抽查均 200 后立即重试 |
+| r13 | rounds=3，同 r12 工作树 | inconclusive（案例级，见状态 5） | 873 s / 58 调用；**vulnerable 侧 4 finding 全部 runtime-confirmed——V02 自动闭环首次达成**。每个 finding 同构：第 1 轮编译失败（机械错，如未声明标识符）→ stderr 回喂 → **第 2 轮编译通过并直接触发 `heap-use-after-free`@`xmlparse.c:7148`（hashTableIterInit，与官方机制探针、r10 手动修复同归因点）**。终版驱动逐项落地配方：MM 计数套件 + ALWAYS + 外部实体 handler + UTF-8 + ParserReset + **裸名 `#include "xmltok.c"`/`"xmlrole.c"`（v3 一字不差）** + XMLCALL。案例级仍 inconclusive：18 线索留存仍触 ≥19 顶 → unreviewed → fixed-not-run（fixed 侧 3+3 干净对照未跑）。**报告口径（PR #302 审阅冻结）：对已知案例调优后的自动复现**——配方向量含该 CVE 触发条件，不得声称无偏检测能力 |
 
 **结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
 **检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
@@ -286,17 +288,16 @@ bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
    8046（zcode-proxy，glm-5.3 可用，均耗 ~15 s/调用，首轮偶发 3–6 分钟）；
    r5v1 曾被误判挂起而终止（urllib 长读 + 大提示词），后续轮用
    faulthandler 看门狗判活。
-5. **V02 状态（r10 后收窄到最后一环）**：runtime-confirmed 自动命中仍
-   开放，止损线 10-19 晚；r5–r10 bundle：容器
-   `/app/output/openharmony/pilot-r{5..10}`。r10 已证明：**配方 v2 有效**
-   ——模型在配方指引下写出了机制完整的触发组合，残余差距是一个 C 签名
-   笔误（修一字即触发，见 r10 行）。真正的拦路虎是**平台的编译失败
-   反馈环缺陷**：8 轮 compile 失败全部 `error_type=null` 未分类、编译器
-   报错文本未有效回喂，`_MAX_COMPILE_REPAIR_ROUNDS` 的机械修复机制
-   空转（模型盲改 8 版）。下一步工程项（r11 前置）：编译失败分类为
-   `error_type=compile` 并把有界编译器 stderr 注入修复反馈；线索配额
-   军备问题（18 留存仍触 ≥19 顶）留观。
-   **r7 报告口径（PR #302 审阅冻结）**：配方 v2 已写入已知 CVE 的触发
+5. **V02 状态（r13：自动闭环已达成，2026-10）**：r13 vulnerable 侧
+   **4 finding 全部 runtime-confirmed**（详见 r13 行）——"漏洞假设 →
+   自动 PoC 转换 → runtime-confirmed"链路经配方 v2（组合语义）+
+   编译反馈环（#304，stderr 回喂）+ 配方 v3（链接闭包）三层迭代后
+   首次闭合，距止损线（10-19 晚）有裕量。**剩余开放项转为案例级
+   PASSED**：线索军备（18 留存仍触 ≥19 顶）使必需审阅未满足、
+   fixed 侧 3+3 干净对照未跑；这是线索配额与 TU 尺寸的工程协调
+   问题，不再涉及检测/转换能力。bundle：容器
+   `/app/output/openharmony/pilot-r{5..13}`。
+   **报告口径（PR #302 审阅冻结）**：配方 v2 已写入已知 CVE 的触发
    条件，故 r7 及后续命中一律报告为**对已知案例调优后的自动复现**，
    不得声称无偏检测能力；配方向量含该 CVE 触发条件这一点必须在任何
    对外材料中保持可见；既有"不从单案例外推检测率"的纪律不变。
