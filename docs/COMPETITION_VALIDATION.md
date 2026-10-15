@@ -240,6 +240,8 @@ Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、�
 | r4 | rounds=3 | failed（no-matching） | 1022 s / 71 调用；3 个 semantic-supported（doProlog:4603、2738、6806） |
 | r5 | rounds=3，配方 v1 首战 | inconclusive（required-review 未满足） | 1141 s / 76 调用；3 finding 全钉 4603（CWE-416×2 + CWE-415）×8 轮 = 24 实验全清洁（driver sha 全在、零编译错）。当日重建 analyzer 丢失 AST 128 MB 预算 → ast-output-limit → xmlparse.c 必需审阅跳过 → fixed-not-run |
 | r6 | rounds=3，AST 预算已修 | inconclusive（required-review 未满足） | 1928 s / 146 调用；8 finding（4603×4 + 2738/3240/5769/6806，全 CWE-416）×8 轮 = 64 实验全清洁。驱动已采用配方（`XML_ParserCreate_MM` + 计数分配器 + 单驱动内扫 N 0–400 + 内部子集 + 外部解析器创建 + 父解析器释放），但缺官方触发组合的三个要件：无外部 SYSTEM 子集与参数实体解析配置（handler 不触发）、编码名传 NULL（失败未定位到 parserInit 编码名复制）、失败后未复用父解析器。注：context==NULL 本身是共享父 DTD 的合法必经语义（2026-10-14 复核纠正，见 §3 补充 2 之 6），此前"空 context 脱离真实路径"的判读有误。配方 v2（PR #302，含纠错与机制探针） |
+| r7 | rounds=3，配方 v2 首战 | inconclusive（required-review 未满足） | 903 s / 51 调用；**零 finding**——16 线索在 scout 评审层全部未升级（配方只进 Specialist 提示词、不影响 scout，判定为模型随机波动而非配方副作用；网关重启后抽查应答正常）。环境注记：发射前网关进程退出致一轮中止（`pilot-r7-aborted-env-down`，六窗拒连→AC5 provider-down=inconclusive 合同真实触发），网关恢复后重跑 |
+| r8 | rounds=3 | inconclusive（fixed 侧线索封顶墙） | 2271 s / 58 调用；**vulnerable 侧首次达成正式判定 failed(no-matching)**（15 线索未触封顶、必需审阅完成——评审加固合同后首次）；3 semantic-supported（1249/3240/6806，**无一在 4603**）×8 轮 = 24 实验全清洁；fixed 侧 16 线索→封顶→unreviewed→inconclusive（案例级判定被 fixed 侧挡下）；一个发现窗遇上游 502/504 瞬断并被如实记录 |
 
 **结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
 **检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
@@ -282,7 +284,11 @@ bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
    r5v1 曾被误判挂起而终止（urllib 长读 + 大提示词），后续轮用
    faulthandler 看门狗判活。
 5. **V02 状态**：runtime-confirmed 自动命中仍开放，止损线 10-19 晚；
-   r5/r6 bundle：容器 `/app/output/openharmony/pilot-r{5,6}`。
+   r5–r8 bundle：容器 `/app/output/openharmony/pilot-r{5..8}`。
+   配方 v2 两轮（r7/r8）均未把驱动送上 4603 靶位（r7 scout 零升级、
+   r8 三个 finding 全在非本体位）——**瓶颈回到 scout 升级随机性**
+   （配方可作用点在目标升级之后的 Specialist 实验构造）；配方 v2 对
+   4603 的组合步效果尚未获得公平测试，后续轮优先解决升级方差。
    **r7 报告口径（PR #302 审阅冻结）**：配方 v2 已写入已知 CVE 的触发
    条件，故 r7 及后续命中一律报告为**对已知案例调优后的自动复现**，
    不得声称无偏检测能力；配方向量含该 CVE 触发条件这一点必须在任何
