@@ -1274,6 +1274,126 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertIn("llm-discovery-leads-capped", notes)
         self.assertIn("parser.c", unreviewed)
 
+    def test_scout_review_rounds_cover_the_scaled_discovery_quota(self):
+        # Review P1 on the quota PR: the discovery quota keeps 18 leads
+        # at 6 windows, but the Scout reviews at most batch*rounds =
+        # 5*3 = 15 -- the wall just moved.  The orchestrator must raise
+        # the Scout wire rounds to cover every kept lead.
+        from lima import agent_orchestrator as orchestration
+        from lima.agent_scout import SCOUT_BATCH_SIZE
+
+        rounds = orchestration._scout_review_rounds
+        self.assertEqual(
+            orchestration._SCOUT_DEFAULT_REVIEW_ROUNDS, rounds(0)
+        )
+        self.assertEqual(
+            orchestration._SCOUT_DEFAULT_REVIEW_ROUNDS,
+            rounds(SCOUT_BATCH_SIZE * orchestration._SCOUT_DEFAULT_REVIEW_ROUNDS),
+        )
+        self.assertEqual(4, rounds(SCOUT_BATCH_SIZE * 3 + 1))
+        self.assertEqual(4, rounds(18))
+        self.assertLess(rounds(15), rounds(16))
+
+    def test_quota_lead_flow_reaches_outcome_without_unreviewed_units(self):
+        # End to end (review P1): discovery keeps a quota-sized lead set,
+        # the Scout discards every lead it reviews, and the final
+        # PlatformReviewOutcome must carry NO unreviewed units -- the
+        # verdict wall is only gone if the whole chain, not just the
+        # discovery stage, covers the scaled quota.
+        import json as _json
+
+        from lima import agent_orchestrator as orchestration
+        from lima.agent_scout import SCOUT_BATCH_SIZE
+        from lima.cxx_agent_tools import CxxAgentBudget
+
+        source = "\n".join(
+            f"int f{index}(void) {{ return {index}; }}"
+            for index in range(10500)
+        )
+        root = tempfile.mkdtemp(suffix="-scout-quota-e2e")
+        workspace = _write_cxx_repo(root, name="parser.c", content=source)
+
+        windows = orchestration._split_windows(source)
+        self.assertLessEqual(
+            len(windows), orchestration._MAX_DISCOVERY_WINDOWS
+        )
+        density = orchestration._MAX_DISCOVERY_LEADS_PER_WINDOW
+        total_leads = density * len(windows)
+        self.assertGreater(
+            total_leads,
+            SCOUT_BATCH_SIZE * orchestration._SCOUT_DEFAULT_REVIEW_ROUNDS,
+            "fixture must exceed the default scout capacity",
+        )
+
+        discovery_replies = [
+            _json.dumps({"leads": [
+                {"path": "parser.c", "line": 1 + index, "summary": "s"}
+                for index in range(density)
+            ]})
+            for _ in windows
+        ]
+
+        scout_calls = []
+
+        def _discard_every_reviewed_lead(
+            provider, base_url, api_key, payload, timeout,
+            extra_headers=None, max_bytes=None,
+        ):
+            scout_calls.append(payload)
+            user = payload["messages"][1]["content"]
+            ids = [
+                line.split(": ", 1)[1]
+                for line in user.splitlines()
+                if line.startswith("- lead_id: ")
+            ]
+            return _json.dumps([
+                {
+                    "lead_id": lead_id,
+                    "verdict": "discard",
+                    "reason": "benign arithmetic on a local value",
+                    "confidence": "high",
+                }
+                for lead_id in ids
+            ])
+
+        with (
+            patch(
+                "lima.agent_scout.post_chat_completion_text",
+                _discard_every_reviewed_lead,
+            ),
+            patch(
+                "lima.uaf_llm_branch.post_chat_completion_text",
+                side_effect=list(discovery_replies),
+            ),
+        ):
+            outcome = run_platform_review(
+                None,
+                workspace,
+                repository_key="team/project",
+                snapshot_hash="a" * 64,
+                translation_units=("parser.c",),
+                mode="auto",
+                budget=CxxAgentBudget(
+                    max_calls=64, max_output_bytes=1_048_576,
+                ),
+                llm_config=dict(RESOLVED_LLM),
+                repro_workbench=None,
+                leads=(),
+                dialogue_rounds=1,
+                source_mode="repository",
+            )
+        self.assertEqual(total_leads, outcome.leads_considered)
+        self.assertNotIn(
+            "parser.c", outcome.unreviewed_units,
+            "scout capacity must cover the scaled discovery quota",
+        )
+        self.assertFalse(any(
+            note.startswith("scout: ") for note in outcome.diagnostics
+        ), outcome.diagnostics)
+        self.assertEqual(
+            -(-total_leads // SCOUT_BATCH_SIZE), len(scout_calls)
+        )
+
     def test_discovery_abstain_keeps_no_leads_outcome(self):
         transport = ScriptedPlatformTransport(
             discovery=[discovery_json([])],

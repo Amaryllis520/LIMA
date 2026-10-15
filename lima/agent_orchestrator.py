@@ -61,6 +61,7 @@ from typing import Any, Final
 from .agent_scale import ResultCache, map_bounded
 from .agent_scout import (
     MAX_LEAD_SNIPPET_LINES,
+    SCOUT_BATCH_SIZE,
     ScoutLead,
     ScoutReport,
     ScoutTarget,
@@ -404,6 +405,10 @@ _MAX_DISCOVERY_WINDOWS: Final = 8
 # keeps a naturally dense large unit intact; a reply density above the
 # quota still caps and still poisons coverage.
 _MAX_DISCOVERY_LEADS_PER_WINDOW: Final = 3
+# Historic Scout review capacity floor; _scout_review_rounds grows the
+# wire rounds beyond it only when the discovery quota kept more leads
+# than batch*rounds can review.
+_SCOUT_DEFAULT_REVIEW_ROUNDS: Final = 3
 
 
 class PlatformFormatError(ValueError):
@@ -1177,6 +1182,24 @@ def _discovery_lead_cap(window_count: int) -> int:
     return max(
         2 * _MAX_DISCOVERY_LEADS,
         _MAX_DISCOVERY_LEADS_PER_WINDOW * window_count,
+    )
+
+
+def _scout_review_rounds(lead_count: int) -> int:
+    """Scout wire rounds that cover every lead handed to the Scout.
+
+    Review P1 on the discovery-quota PR: the quota keeps up to three
+    leads per audited window (18 at 6 windows), but the Scout's default
+    capacity is ``SCOUT_BATCH_SIZE * 3 = 15`` leads -- the surplus then
+    landed in ``unresolved_leads`` and the verdict wall (unit marked
+    unreviewed) merely moved.  The rounds floor stays at the historic
+    default and only grows to ``ceil(leads / batch)``; the call budget
+    still bounds the total wire work.
+    """
+
+    return max(
+        _SCOUT_DEFAULT_REVIEW_ROUNDS,
+        -(-lead_count // SCOUT_BATCH_SIZE),
     )
 
 
@@ -2091,6 +2114,7 @@ def run_platform_review(
             mode=mode,
             timeout=scout_timeout,
             deadline=deadline,
+            max_rounds=_scout_review_rounds(len(given_leads)),
         )
     except ValueError as exc:
         if mode == MODE_REQUIRED:
