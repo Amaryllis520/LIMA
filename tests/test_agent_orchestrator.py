@@ -1168,6 +1168,112 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertIn("llm-discovery-leads-capped", notes)
         self.assertIn("parser.c", unreviewed)
 
+    def test_discovery_lead_quota_scales_with_audited_windows(self):
+        # Battle r5-r8: glm-5.3 reliably reports 16-17 leads across the
+        # ~6 windows of a 236 KB TU, so the fixed global keep-cap of 16
+        # poisoned that unit as unreviewed in nearly every round.  The
+        # quota now scales with the audited window count (floor
+        # 2*_MAX_DISCOVERY_LEADS, then 3 kept leads per window) so a
+        # naturally dense large unit is no longer truncated, while reply
+        # density above the quota still caps and still poisons coverage.
+        from lima import agent_orchestrator as orchestration
+
+        cap = orchestration._discovery_lead_cap
+        self.assertEqual(2 * orchestration._MAX_DISCOVERY_LEADS, cap(0))
+        self.assertEqual(2 * orchestration._MAX_DISCOVERY_LEADS, cap(5))
+        self.assertEqual(
+            6 * orchestration._MAX_DISCOVERY_LEADS_PER_WINDOW, cap(6)
+        )
+        self.assertEqual(
+            8 * orchestration._MAX_DISCOVERY_LEADS_PER_WINDOW, cap(8)
+        )
+        self.assertLess(cap(6), cap(7))
+
+    def test_dense_large_unit_is_not_capped_at_three_leads_per_window(self):
+        # A unit large enough for several windows whose every window
+        # reports exactly the per-window quota keeps ALL its leads: no
+        # cap note, no unreviewed poisoning.
+        import json as _json
+        from unittest.mock import patch
+
+        from lima import agent_orchestrator as orchestration
+        from lima.cxx_agent_tools import CxxAgentBudget
+
+        source = "\n".join(
+            f"int f{index}(void) {{ return {index}; }}"
+            for index in range(10500)
+        )
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return source
+
+        windows = orchestration._split_windows(source)
+        self.assertGreaterEqual(len(windows), 3)
+        # Stay under the window cap so the lead quota is the only knob.
+        self.assertLessEqual(
+            len(windows), orchestration._MAX_DISCOVERY_WINDOWS
+        )
+        density = orchestration._MAX_DISCOVERY_LEADS_PER_WINDOW
+        replies = [
+            _json.dumps({"leads": [
+                {"path": "parser.c", "line": 1 + index, "summary": "s"}
+                for index in range(density)
+            ]})
+            for _ in windows
+        ]
+        with patch.object(
+            orchestration, "send_semantic_request", side_effect=replies,
+        ):
+            leads, notes, unreviewed = orchestration._discover_leads(
+                {"provider": "custom", "model": "m"}, _FlatWorkspace(),
+                ("parser.c",), 60, None, CxxAgentBudget(), "required",
+            )
+        self.assertEqual(density * len(windows), len(leads))
+        self.assertNotIn("llm-discovery-leads-capped", notes)
+        self.assertNotIn("parser.c", unreviewed)
+
+    def test_reply_density_above_the_scaled_quota_still_caps(self):
+        # The honesty rule survives the scaling: 8 leads per window
+        # (the schema ceiling) still overflows the window-scaled quota,
+        # drops leads, and poisons the unit as unreviewed.
+        import json as _json
+        from unittest.mock import patch
+
+        from lima import agent_orchestrator as orchestration
+        from lima.cxx_agent_tools import CxxAgentBudget
+
+        source = "\n".join(
+            f"int f{index}(void) {{ return {index}; }}"
+            for index in range(10500)
+        )
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return source
+
+        windows = orchestration._split_windows(source)
+        self.assertLessEqual(
+            len(windows), orchestration._MAX_DISCOVERY_WINDOWS
+        )
+        replies = [
+            _json.dumps({"leads": [
+                {"path": "parser.c", "line": 1 + index, "summary": "s"}
+                for index in range(8)
+            ]})
+            for _ in windows
+        ]
+        with patch.object(
+            orchestration, "send_semantic_request", side_effect=replies,
+        ):
+            leads, notes, unreviewed = orchestration._discover_leads(
+                {"provider": "custom", "model": "m"}, _FlatWorkspace(),
+                ("parser.c",), 60, None, CxxAgentBudget(), "required",
+            )
+        self.assertLess(len(leads), 8 * len(windows))
+        self.assertIn("llm-discovery-leads-capped", notes)
+        self.assertIn("parser.c", unreviewed)
+
     def test_discovery_abstain_keeps_no_leads_outcome(self):
         transport = ScriptedPlatformTransport(
             discovery=[discovery_json([])],
