@@ -32,14 +32,26 @@ failures stay behavioural rather than import-time.
 
 Fixture/runtime discipline: lazy temp trees (LF pinned), offline clients,
 zero network, no execution of fixture sources.
+
+RC-TEST-01 (mechanical correction, 2026-10-15, MR-60-PR284-CI-AND-
+INTEGRATION-RECOVERY-20261015/v1): the observation root now follows the
+same root semantics as ``RepositoryWorkspace`` (expanduser + resolve) and
+``repo_tree`` yields the resolved root, so equivalent spellings of one
+physical root observe the identical non-zero ledger; the pre-fix purely
+lexical matching silently dropped alias spellings (``pivot/..``, Windows
+8.3 short names) — the CI miss. Product semantics, expected values and
+assertion strength are unchanged.
 """
 
 from __future__ import annotations
 
+import ctypes
 import importlib
 import json
+import os
 import re
 import shutil
+import sys
 import tempfile
 import unittest
 from collections.abc import Iterator, Mapping
@@ -170,9 +182,13 @@ def repo_tree(
 
     ``reverse=True`` writes the same content in reversed order, exercising
     write-order independence (section 5.7 determinism).
+
+    RC-TEST-01: the yielded root is resolved once, so the fixture hands out
+    the same canonical spelling the workspace itself would derive (the raw
+    mkdtemp spelling may carry alias components on some hosts).
     """
 
-    root = Path(tempfile.mkdtemp(prefix="lima-pr284-rework-"))
+    root = Path(tempfile.mkdtemp(prefix="lima-pr284-rework-")).resolve()
     names = sorted(files)
     if reverse:
         names = names[::-1]
@@ -197,14 +213,22 @@ def observing_reads(root: Path) -> Iterator[list[tuple[str, int]]]:
     Records ``(repo-relative path, successful bytes)``; failures record 0
     bytes and re-raise. Reads outside ``root`` pass through unrecorded. The
     observer never alters data or return values.
+
+    RC-TEST-01: the observation root is normalised once with the same root
+    semantics as ``RepositoryWorkspace`` (expanduser + resolve), so every
+    equivalent spelling of one physical root (lexical ``pivot/..`` aliases,
+    Windows 8.3 short names) records the same ledger; a purely lexical
+    ``relative_to`` against the caller's spelling silently dropped those
+    reads (CI miss) without touching any product path policy.
     """
 
+    observation_root = root.expanduser().resolve(strict=True)
     records: list[tuple[str, int]] = []
     original = Path.read_bytes
 
     def observer(path: Path) -> bytes:
         try:
-            rel = path.relative_to(root).as_posix()
+            rel = path.relative_to(observation_root).as_posix()
         except ValueError:
             return original(path)
         try:
@@ -217,6 +241,29 @@ def observing_reads(root: Path) -> Iterator[list[tuple[str, int]]]:
 
     with patch.object(Path, "read_bytes", observer):
         yield records
+
+
+def windows_short_path_alias(path: Path) -> Path | None:
+    """Real Windows 8.3 short spelling of ``path`` when the volume has one.
+
+    Returns None on non-Windows platforms and when the volume provides no
+    distinct short name (8.3 generation disabled): nothing is ever faked,
+    and the cross-platform alias variants never depend on it.
+    """
+
+    if sys.platform != "win32":
+        return None
+    kernel32 = ctypes.windll.kernel32
+    size = kernel32.GetShortPathNameW(str(path), None, 0)
+    if size == 0:
+        return None
+    buffer = ctypes.create_unicode_buffer(size + 1)
+    if kernel32.GetShortPathNameW(str(path), buffer, size + 1) == 0:
+        return None
+    short = buffer.value
+    if short.lower() == str(path).lower():
+        return None
+    return Path(short)
 
 
 def build_payload(
@@ -1261,6 +1308,132 @@ class IOMeteringTests(unittest.TestCase):
                     sum(size for _rel, size in records),
                     "the bound never replaces the equivalence accounting",
                 )
+
+
+# ---------------------------------------------------------------------------
+# IR-03 (RC-TEST-01): equivalent root spellings share one observation ledger
+# ---------------------------------------------------------------------------
+
+
+class EquivalentPathRootTests(unittest.TestCase):
+    """RC-TEST-01: one physical root records one ledger under any spelling.
+
+    The observation root must follow the same root semantics as
+    ``RepositoryWorkspace`` (expanduser + resolve), so equivalent spellings
+    of one physical root — canonical, a lexical ``pivot/..`` alias, the
+    alias resolved first, and a real Windows 8.3 short name when the volume
+    provides one — observe the identical non-zero read ledger for the same
+    product behaviour (the pre-fix observer silently recorded nothing for
+    alias spellings). Observer-only rules are pinned by direct probes.
+    """
+
+    def test_equivalent_root_spellings_share_one_nonzero_ledger(self) -> None:
+        cg = load_cg()
+        main_len = len(MAIN_PY.encode())
+        req_len = len(REQUIREMENTS_TXT.encode())
+        files = {"requirements.txt": REQUIREMENTS_TXT, "main.py": MAIN_PY}
+        with repo_tree(files) as raw:
+            canonical = raw.resolve()
+            (canonical / "obs-pivot").mkdir()
+            variants: list[tuple[str, Path]] = [
+                ("canonical", canonical),
+                ("pivot-dotdot", canonical / "obs-pivot" / ".."),
+                (
+                    "alias-resolved-first",
+                    (canonical / "obs-pivot" / "..").resolve(),
+                ),
+            ]
+            short = windows_short_path_alias(canonical)
+            if short is not None:
+                variants.append(("short-8dot3", short))
+            ledgers: list[list[tuple[str, int]]] = []
+            for label, observer_root in variants:
+                with self.subTest(variant=label):
+                    self.assertTrue(
+                        os.path.samefile(observer_root, canonical),
+                        "every variant must denote the same physical root",
+                    )
+                    with observing_reads(observer_root) as records:
+                        result = cg.build_monorepo_profile(
+                            RepositoryWorkspace(observer_root), **BUILD_KWARGS
+                        )
+                    self.assertEqual(
+                        attempts_by_path(records),
+                        {"main.py": 7, "requirements.txt": 2},
+                        "alias spellings must not drop real reads",
+                    )
+                    self.assertEqual(
+                        bytes_by_path(records),
+                        {"main.py": 7 * main_len, "requirements.txt": 2 * req_len},
+                    )
+                    meter = result.metering
+                    self.assertEqual(
+                        meter.read_success_bytes,
+                        7 * main_len + 2 * req_len,
+                    )
+                    self.assertEqual(
+                        meter.main_inventory_read_attempts
+                        + meter.component_rescan_read_attempts
+                        + meter.profile_manifest_read_attempts
+                        + meter.ast_read_attempts
+                        + meter.metadata_channel_read_attempts,
+                        len(records),
+                        "the product ledger must equal the observed ledger",
+                    )
+                    ledgers.append(list(records))
+            for index in range(1, len(ledgers)):
+                with self.subTest(identity=variants[index][0]):
+                    self.assertEqual(
+                        ledgers[index],
+                        ledgers[0],
+                        "all spellings of one physical root share one ledger",
+                    )
+
+    def test_out_of_domain_read_passes_through_unrecorded(self) -> None:
+        outside_root = Path(tempfile.mkdtemp(prefix="lima-pr284-outside-"))
+        try:
+            (outside_root / "outside.txt").write_bytes(b"outside-bytes\n")
+            with repo_tree({"main.py": MAIN_PY}) as root, observing_reads(
+                root
+            ) as records:
+                outside = (outside_root / "outside.txt").read_bytes()
+                inside = (root / "main.py").read_bytes()
+        finally:
+            shutil.rmtree(outside_root, ignore_errors=True)
+        self.assertEqual(outside, b"outside-bytes\n")
+        self.assertEqual(inside, MAIN_PY.encode())
+        self.assertEqual(
+            records,
+            [("main.py", len(MAIN_PY.encode()))],
+            "only in-domain reads are recorded",
+        )
+
+    def test_failed_read_records_zero_bytes_and_reraises(self) -> None:
+        with repo_tree({"main.py": MAIN_PY}) as root, observing_reads(
+            root
+        ) as records:
+            with self.assertRaises(FileNotFoundError):
+                (root / "missing.py").read_bytes()
+        self.assertEqual(
+            records,
+            [("missing.py", 0)],
+            "a failed in-domain read records zero successful bytes",
+        )
+
+    def test_observer_transparent_and_no_patch_residue(self) -> None:
+        with repo_tree({"main.py": MAIN_PY}) as root:
+            original = Path.read_bytes
+            with observing_reads(root) as records:
+                first = (root / "main.py").read_bytes()
+            self.assertIs(Path.read_bytes, original, "no patch state residue")
+            second = (root / "main.py").read_bytes()
+            self.assertEqual(first, MAIN_PY.encode(), "returns never replaced")
+            self.assertEqual(second, MAIN_PY.encode())
+            self.assertEqual(
+                records,
+                [("main.py", len(MAIN_PY.encode()))],
+                "reads after the observation window are not recorded",
+            )
 
 
 # ---------------------------------------------------------------------------
