@@ -392,6 +392,14 @@ _DISCOVERY_SEED: Final = "llm-discovery"
 # failure (precise, mechanical); clean runs buy no extra rounds.  Compile
 # repairs converge fast, so the cap sits above the dialogue budget.
 _MAX_COMPILE_REPAIR_ROUNDS: Final = 4
+# Battle r10: compile-stage rounds recorded error_type=null and the
+# compiler stderr (which the sidecar already ships in diagnostics) was
+# distilled away before the critic context, so the mechanical repair
+# loop iterated blind eight times over a one-token signature typo.
+# Compile failures now carry their classification and a bounded excerpt
+# of the compiler diagnostics into the experiment ledger the critic
+# reads; run-stage observations keep their structured shape unchanged.
+_MAX_COMPILE_FEEDBACK_CHARS: Final = 1200
 # Reasoning-happy models hang on whole-file audits; one window per call
 # keeps every discovery round inside a step budget.  Line boundaries are
 # respected so approximate line numbers stay meaningful per window.
@@ -1543,6 +1551,14 @@ def _paths_bind(candidate: Any, anchor: Any) -> bool:
 def _experiment_entry(
     round_index: int, driver_code: str, observation: Any, hit: bool,
 ) -> dict:
+    error_type = observation.error_type
+    diagnostic: str | None = None
+    if observation.stage == "compile":
+        if error_type is None:
+            error_type = "compile-failed"
+        feedback = "\n".join(observation.diagnostics)
+        if feedback:
+            diagnostic = feedback[:_MAX_COMPILE_FEEDBACK_CHARS]
     return {
         "round": round_index + 1,
         "driver_sha256": hashlib.sha256(
@@ -1551,7 +1567,8 @@ def _experiment_entry(
         "stage": observation.stage,
         "ok": bool(observation.ok),
         "exit_code": observation.exit_code,
-        "error_type": observation.error_type,
+        "error_type": error_type,
+        "diagnostic": diagnostic,
         "faulting_line": observation.faulting_line,
         "faulting_file": getattr(observation, "faulting_file", None),
         "hit": hit,
