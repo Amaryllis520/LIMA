@@ -1875,6 +1875,13 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertIn("NON-NULL encoding name", uaf)
         self.assertIn("XML_ParserReset", uaf)
         self.assertIn("not universal necessary conditions", uaf)
+        # Battle r11: the link-closure wall -- the platform links only
+        # the target TU, so expat needs its sibling units by bare name
+        # (the compile database's -Iexpat/lib resolves them); the model
+        # tried repo-relative and build-relative paths and failed both.
+        self.assertIn("#include \"xmltok.c\"", uaf)
+        self.assertIn("#include \"xmlrole.c\"", uaf)
+        self.assertIn("XMLCALL", uaf)
         # The wrong claim from commit 72aa004 must not come back.
         self.assertNotIn("empty context", uaf)
         # dsoftbus/avrcp lineage: caller-precondition replication, the
