@@ -283,6 +283,10 @@ bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
    faulthandler 看门狗判活。
 5. **V02 状态**：runtime-confirmed 自动命中仍开放，止损线 10-19 晚；
    r5/r6 bundle：容器 `/app/output/openharmony/pilot-r{5,6}`。
+   **r7 报告口径（PR #302 审阅冻结）**：配方 v2 已写入已知 CVE 的触发
+   条件，故 r7 及后续命中一律报告为**对已知案例调优后的自动复现**，
+   不得声称无偏检测能力；配方向量含该 CVE 触发条件这一点必须在任何
+   对外材料中保持可见；既有"不从单案例外推检测率"的纪律不变。
 6. **组合机理探针双对照（2026-10-14，PR #302 附带）**：按官方用例
    复刻的探针（`tests/fixtures/expat_composition_probe/`，扫描序数替代
    固定 count=3），同驱动同配置在冻结对上运行（chain-probe，clang-14
