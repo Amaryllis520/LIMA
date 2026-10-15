@@ -400,6 +400,20 @@ _MAX_COMPILE_REPAIR_ROUNDS: Final = 4
 # of the compiler diagnostics into the experiment ledger the critic
 # reads; run-stage observations keep their structured shape unchanged.
 _MAX_COMPILE_FEEDBACK_CHARS: Final = 1200
+# Review P2 on the feedback loop: the sidecar also reports stage="compile"
+# when the compile step timed out or the sandbox was unavailable.  Those
+# are environment failures, not compiler feedback about the driver: they
+# get their own error_type, carry only the marker(s) -- never a compiler
+# stderr excerpt the critic could misread as actionable -- and they do
+# not grant compile repair rounds (the grant exists because real compile
+# errors are precise mechanical feedback; an outage is not).
+_COMPILE_ENVIRONMENT_MARKERS: Final = frozenset({
+    "repro-step-timed-out",
+    "sandbox-unavailable",
+    "sandbox-failed",
+    "repro-binary-missing",
+})
+_COMPILE_ENVIRONMENT_ERROR_TYPE: Final = "compile-environment-failed"
 # Reasoning-happy models hang on whole-file audits; one window per call
 # keeps every discovery round inside a step budget.  Line boundaries are
 # respected so approximate line numbers stay meaningful per window.
@@ -1548,12 +1562,45 @@ def _paths_bind(candidate: Any, anchor: Any) -> bool:
     return left == right or left.endswith("/" + right) or right.endswith("/" + left)
 
 
+def _compile_environment_failure(observation: Any) -> bool:
+    """Whether a compile-stage observation failed for environment reasons.
+
+    Timeout, sandbox unavailability and a vanished binary are not
+    compiler feedback about the driver; distinguishing them keeps the
+    critic from being handed contradictory advice.
+    """
+
+    if observation.stage != "compile":
+        return False
+    # Diagnostics are repr-escaped (ascii()), so match by substring.
+    return any(
+        marker in diagnostic
+        for diagnostic in observation.diagnostics
+        for marker in _COMPILE_ENVIRONMENT_MARKERS
+    )
+
+
 def _experiment_entry(
     round_index: int, driver_code: str, observation: Any, hit: bool,
 ) -> dict:
     error_type = observation.error_type
     diagnostic: str | None = None
-    if observation.stage == "compile":
+    if _compile_environment_failure(observation):
+        if error_type is None:
+            error_type = _COMPILE_ENVIRONMENT_ERROR_TYPE
+        markers = [
+            marker
+            for marker in _COMPILE_ENVIRONMENT_MARKERS
+            if any(
+                marker in diagnostic
+                for diagnostic in observation.diagnostics
+            )
+        ]
+        if markers:
+            # Environment markers only -- never a compiler stderr
+            # excerpt the critic could misread as driver feedback.
+            diagnostic = "; ".join(markers)
+    elif observation.stage == "compile":
         if error_type is None:
             error_type = "compile-failed"
         feedback = "\n".join(observation.diagnostics)
@@ -1791,9 +1838,12 @@ def _process_target(
             # A compile failure is precise mechanical feedback and critic
             # revisions after it demonstrably converge, so bounded extra
             # repair rounds are granted beyond the dialogue budget; a clean
-            # run is information-poor and buys nothing extra.
+            # run is information-poor and buys nothing extra, and an
+            # environment failure (timeout, sandbox outage) says nothing
+            # about the driver and grants nothing (review P2).
             if (
                 observation.stage == "compile"
+                and not _compile_environment_failure(observation)
                 and compile_repairs < _MAX_COMPILE_REPAIR_ROUNDS
             ):
                 compile_repairs += 1

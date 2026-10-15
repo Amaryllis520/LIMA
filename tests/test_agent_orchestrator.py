@@ -2032,6 +2032,68 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertNotEqual("compile-failed", entry["error_type"])
         self.assertIsNone(entry["diagnostic"])
 
+    def test_compile_stage_environment_failures_are_not_compile_errors(self):
+        # Review P2 on the feedback loop: the sidecar also returns
+        # stage="compile" when the compile step timed out or the sandbox
+        # was unavailable; those must not be labelled compile-failed nor
+        # fed to the critic as actionable compiler feedback.
+        from lima import agent_orchestrator as orchestration
+
+        for marker in (
+            "sandbox-unavailable",
+            "sandbox-failed",
+            "repro-step-timed-out",
+            "repro-binary-missing",
+        ):
+            with self.subTest(marker=marker):
+                observed = observation_from(repro_response(
+                    stage="compile", asan_report=None,
+                    diagnostics=(marker,),
+                ))
+                entry = orchestration._experiment_entry(
+                    0, "int main(){}", observed, False,
+                )
+                self.assertEqual(
+                    "compile-environment-failed", entry["error_type"],
+                )
+                self.assertIn(marker, entry["diagnostic"])
+                # No compiler-stderr excerpt for environment failures.
+                self.assertNotIn("error:", entry["diagnostic"])
+
+    def test_environment_failed_compiles_grant_no_repair_rounds(self):
+        # The repair-round grant exists because compile errors are
+        # precise mechanical feedback; a sandbox outage is not, so it
+        # must not extend the experiment budget nor invite driver
+        # revisions. dialogue_rounds=1 buys two experiments; the first
+        # being an environment failure must keep it at two.
+        transport = ScriptedPlatformTransport(
+            specialist=[hypothesis_json(driver="int first() { return 0; }")],
+            critic=[critic_json(
+                assessment="revise-experiment",
+                revised_driver="int v1() { FREE_THEN_USE; }",
+            )],
+        )
+        observed = observation_from(repro_response(
+            stage="compile", asan_report=None,
+            diagnostics=("sandbox-unavailable",),
+        ))
+        outcome = _run(
+            llm_transport=transport,
+            workbench=FakeWorkbench([observed, clean_run()]),
+        )
+        log = outcome.targets[0].experiment_log
+        self.assertEqual(2, len(log))
+        self.assertEqual("compile-environment-failed", log[0]["error_type"])
+        critic_user = next(
+            payload["messages"][1]["content"]
+            for payload in transport.calls
+            if CRITIC_ROLE in payload["messages"][0]["content"]
+        )
+        # The critic sees one coherent story: an environment failure,
+        # not a compile-failed + sandbox-unavailable contradiction.
+        self.assertIn("compile-environment-failed", critic_user)
+        self.assertNotIn('"error_type": "compile-failed"', critic_user)
+
     def test_critic_repair_context_carries_the_compile_error_text(self):
         # The last-mile fix end to end: a compile failure must reach the
         # model as actionable feedback -- the critic payload carries the
