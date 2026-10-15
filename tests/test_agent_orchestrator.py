@@ -1631,12 +1631,26 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertEqual(_specialist_recipe_appendix(), appendix)
 
         # expat lineage: counting allocator, ordinal sweep, build-gate
-        # reachability honesty.
+        # reachability honesty, and the exact composition rule grounded
+        # in the official regression test (see
+        # tests/fixtures/expat_composition_probe/).  Review correction:
+        # a NULL context is the legal shared-DTD semantics, so the
+        # recipe must never claim an empty context calls outside the
+        # real path.
         uaf = _SPECIALIST_CWE_RECIPES["CWE-416"]
         self.assertIn("allocation ordinal", uaf)
         self.assertIn("sweep N", uaf)
         self.assertIn("build configuration", uaf)
         self.assertIn("unreachable in that build", uaf)
+        self.assertIn("external SYSTEM subset", uaf)
+        self.assertIn("XML_PARAM_ENTITY_PARSING_ALWAYS", uaf)
+        self.assertIn("NULL context is the legal", uaf)
+        self.assertIn("never dismiss a NULL context", uaf)
+        self.assertIn("NON-NULL encoding name", uaf)
+        self.assertIn("XML_ParserReset", uaf)
+        self.assertIn("not universal necessary conditions", uaf)
+        # The wrong claim from commit 72aa004 must not come back.
+        self.assertNotIn("empty context", uaf)
         # dsoftbus/avrcp lineage: caller-precondition replication, the
         # second-lookup window, the two-thread hammer, noise discipline.
         self.assertIn("verbatim", uaf)

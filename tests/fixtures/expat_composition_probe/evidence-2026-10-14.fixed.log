@@ -1,0 +1,193 @@
+sweep ordinal 1
+ordinal 1: create failed as designed
+ordinal 1 survived reset+free
+sweep ordinal 2
+ordinal 2: create failed as designed
+ordinal 2 survived reset+free
+sweep ordinal 3
+ordinal 3: create failed as designed
+ordinal 3 survived reset+free
+sweep ordinal 4
+ordinal 4: create succeeded (failure past path)
+ordinal 4 survived reset+free
+sweep ordinal 5
+ordinal 5: create succeeded (failure past path)
+ordinal 5 survived reset+free
+sweep ordinal 6
+ordinal 6: create succeeded (failure past path)
+ordinal 6 survived reset+free
+sweep ordinal 7
+ordinal 7: create succeeded (failure past path)
+ordinal 7 survived reset+free
+sweep ordinal 8
+ordinal 8: create succeeded (failure past path)
+ordinal 8 survived reset+free
+sweep ordinal 9
+ordinal 9: create succeeded (failure past path)
+ordinal 9 survived reset+free
+sweep ordinal 10
+ordinal 10: create succeeded (failure past path)
+ordinal 10 survived reset+free
+sweep ordinal 11
+ordinal 11: create succeeded (failure past path)
+ordinal 11 survived reset+free
+sweep ordinal 12
+ordinal 12: create succeeded (failure past path)
+ordinal 12 survived reset+free
+sweep ordinal 13
+ordinal 13: create succeeded (failure past path)
+ordinal 13 survived reset+free
+sweep ordinal 14
+ordinal 14: create succeeded (failure past path)
+ordinal 14 survived reset+free
+sweep ordinal 15
+ordinal 15: create succeeded (failure past path)
+ordinal 15 survived reset+free
+sweep ordinal 16
+ordinal 16: create succeeded (failure past path)
+ordinal 16 survived reset+free
+sweep ordinal 17
+ordinal 17: create succeeded (failure past path)
+ordinal 17 survived reset+free
+sweep ordinal 18
+ordinal 18: create succeeded (failure past path)
+ordinal 18 survived reset+free
+sweep ordinal 19
+ordinal 19: create succeeded (failure past path)
+ordinal 19 survived reset+free
+sweep ordinal 20
+ordinal 20: create succeeded (failure past path)
+ordinal 20 survived reset+free
+sweep ordinal 21
+ordinal 21: create succeeded (failure past path)
+ordinal 21 survived reset+free
+sweep ordinal 22
+ordinal 22: create succeeded (failure past path)
+ordinal 22 survived reset+free
+sweep ordinal 23
+ordinal 23: create succeeded (failure past path)
+ordinal 23 survived reset+free
+sweep ordinal 24
+ordinal 24: create succeeded (failure past path)
+ordinal 24 survived reset+free
+sweep ordinal 25
+ordinal 25: create succeeded (failure past path)
+ordinal 25 survived reset+free
+sweep ordinal 26
+ordinal 26: create succeeded (failure past path)
+ordinal 26 survived reset+free
+sweep ordinal 27
+ordinal 27: create succeeded (failure past path)
+ordinal 27 survived reset+free
+sweep ordinal 28
+ordinal 28: create succeeded (failure past path)
+ordinal 28 survived reset+free
+sweep ordinal 29
+ordinal 29: create succeeded (failure past path)
+ordinal 29 survived reset+free
+sweep ordinal 30
+ordinal 30: create succeeded (failure past path)
+ordinal 30 survived reset+free
+sweep ordinal 31
+ordinal 31: create succeeded (failure past path)
+ordinal 31 survived reset+free
+sweep ordinal 32
+ordinal 32: create succeeded (failure past path)
+ordinal 32 survived reset+free
+sweep ordinal 33
+ordinal 33: create succeeded (failure past path)
+ordinal 33 survived reset+free
+sweep ordinal 34
+ordinal 34: create succeeded (failure past path)
+ordinal 34 survived reset+free
+sweep ordinal 35
+ordinal 35: create succeeded (failure past path)
+ordinal 35 survived reset+free
+sweep ordinal 36
+ordinal 36: create succeeded (failure past path)
+ordinal 36 survived reset+free
+sweep ordinal 37
+ordinal 37: create succeeded (failure past path)
+ordinal 37 survived reset+free
+sweep ordinal 38
+ordinal 38: create succeeded (failure past path)
+ordinal 38 survived reset+free
+sweep ordinal 39
+ordinal 39: create succeeded (failure past path)
+ordinal 39 survived reset+free
+sweep ordinal 40
+ordinal 40: create succeeded (failure past path)
+ordinal 40 survived reset+free
+sweep ordinal 41
+ordinal 41: create succeeded (failure past path)
+ordinal 41 survived reset+free
+sweep ordinal 42
+ordinal 42: create succeeded (failure past path)
+ordinal 42 survived reset+free
+sweep ordinal 43
+ordinal 43: create succeeded (failure past path)
+ordinal 43 survived reset+free
+sweep ordinal 44
+ordinal 44: create succeeded (failure past path)
+ordinal 44 survived reset+free
+sweep ordinal 45
+ordinal 45: create succeeded (failure past path)
+ordinal 45 survived reset+free
+sweep ordinal 46
+ordinal 46: create succeeded (failure past path)
+ordinal 46 survived reset+free
+sweep ordinal 47
+ordinal 47: create succeeded (failure past path)
+ordinal 47 survived reset+free
+sweep ordinal 48
+ordinal 48: create succeeded (failure past path)
+ordinal 48 survived reset+free
+sweep ordinal 49
+ordinal 49: create succeeded (failure past path)
+ordinal 49 survived reset+free
+sweep ordinal 50
+ordinal 50: create succeeded (failure past path)
+ordinal 50 survived reset+free
+sweep ordinal 51
+ordinal 51: create succeeded (failure past path)
+ordinal 51 survived reset+free
+sweep ordinal 52
+ordinal 52: create succeeded (failure past path)
+ordinal 52 survived reset+free
+sweep ordinal 53
+ordinal 53: create succeeded (failure past path)
+ordinal 53 survived reset+free
+sweep ordinal 54
+ordinal 54: create succeeded (failure past path)
+ordinal 54 survived reset+free
+sweep ordinal 55
+ordinal 55: create succeeded (failure past path)
+ordinal 55 survived reset+free
+sweep ordinal 56
+ordinal 56: create succeeded (failure past path)
+ordinal 56 survived reset+free
+sweep ordinal 57
+ordinal 57: create succeeded (failure past path)
+ordinal 57 survived reset+free
+sweep ordinal 58
+ordinal 58: create succeeded (failure past path)
+ordinal 58 survived reset+free
+sweep ordinal 59
+ordinal 59: create succeeded (failure past path)
+ordinal 59 survived reset+free
+sweep ordinal 60
+ordinal 60: create succeeded (failure past path)
+ordinal 60 survived reset+free
+sweep ordinal 61
+ordinal 61: create succeeded (failure past path)
+ordinal 61 survived reset+free
+sweep ordinal 62
+ordinal 62: create succeeded (failure past path)
+ordinal 62 survived reset+free
+sweep ordinal 63
+ordinal 63: create succeeded (failure past path)
+ordinal 63 survived reset+free
+sweep ordinal 64
+ordinal 64: create succeeded (failure past path)
+ordinal 64 survived reset+free
+sweep done: 64 ordinals, no crash
