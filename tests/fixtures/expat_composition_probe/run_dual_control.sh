@@ -6,12 +6,16 @@
 # Read-only over the checkouts; writes only under $OUT.
 #
 # Contract: exit 0 only when the dual control holds -- the vulnerable
-# build crashes with an ASan report attributed to xmlparse AND the fixed
-# build completes the sweep cleanly.  Anything else (fixed crashing,
-# vulnerable clean, timeout/inconclusive, build failure) exits non-zero
-# so automation can never read a failed control as a pass.
+# build crashes with the MECHANISM SIGNATURE (heap-use-after-free,
+# attributed to xmlparse.c, on the parent-reset path; enforced by
+# classify_probe_log.py, which rejects any unrelated ASan report) AND
+# the fixed build completes the sweep with no sanitizer report.
+# Anything else (build failure, wrong crash kind, off-path attribution,
+# fixed crashing, clean vulnerable side, timeout) exits non-zero so
+# automation can never read a failed control as a pass.
 set -e
-PROBE_SRC="${1:-/src/tests/fixtures/expat_composition_probe/probe.c}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+PROBE_SRC="${1:-$HERE/probe.c}"
 OUT="${2:-/tmp/expat-composition-probe}"
 rm -rf "$OUT"; mkdir -p "$OUT"
 
@@ -33,32 +37,25 @@ for key in expat-up-vuln expat-up-fixed; do
   build "$key" 2> "$OUT/build_$key.err" || { echo "BUILD FAILED ($key)"; cat "$OUT/build_$key.err"; exit 2; }
 done
 
-declare -A OUTCOME
-for key in expat-up-vuln expat-up-fixed; do
-  log="$OUT/run_$key.log"
+classify() {
+  key="$1"; role="$2"; log="$OUT/run_$key.log"
   # A crash is an expected outcome for the vulnerable side, so the exit
-  # status is deliberately not fatal here; classification below decides.
+  # status is deliberately not fatal here; the classifier decides.
   timeout 120 "$OUT/probe_$key" > "$log" 2>&1 || true
-  if grep -q "ERROR: AddressSanitizer" "$log"; then
-    kind=$(grep -m1 "ERROR: AddressSanitizer" "$log" | sed 's/.*AddressSanitizer: //;s/ on.*//')
-    frame=$(grep -m1 "xmlparse.c" "$log" || true)
-    echo "RESULT $key: ASAN-CRASH ($kind) ${frame:+frame: $frame}"
-    OUTCOME[$key]=asan-crash
-  elif grep -q "sweep done" "$log"; then
-    echo "RESULT $key: CLEAN ($(tail -1 "$log"))"
-    OUTCOME[$key]=clean
-  else
-    echo "RESULT $key: INCONCLUSIVE (rc/timeout, see $log)"; head -3 "$log"
-    OUTCOME[$key]=inconclusive
+  if detail=$(python3 "$HERE/classify_probe_log.py" "$log" "$role"); then
+    echo "RESULT $key: EXPECTED -- ${detail#classify[$role]: OK -- }"
+    return 0
   fi
-done
+  echo "RESULT $key: UNEXPECTED -- $detail"
+  return 1
+}
 
-if [ "${OUTCOME[expat-up-vuln]}" != "asan-crash" ]; then
-  echo "DUAL_CONTROL_FAILED: vulnerable side did not crash with an ASan report (got ${OUTCOME[expat-up-vuln]})"
-  exit 1
-fi
-if [ "${OUTCOME[expat-up-fixed]}" != "clean" ]; then
-  echo "DUAL_CONTROL_FAILED: fixed side was not clean (got ${OUTCOME[expat-up-fixed]})"
+vuln_ok=0; fixed_ok=0
+classify expat-up-vuln vulnerable || vuln_ok=1
+classify expat-up-fixed fixed || fixed_ok=1
+
+if [ "$vuln_ok" -ne 0 ] || [ "$fixed_ok" -ne 0 ]; then
+  echo "DUAL_CONTROL_FAILED: vulnerable=$vuln_ok fixed=$fixed_ok (0 = as expected)"
   exit 1
 fi
 echo "== dual control holds"

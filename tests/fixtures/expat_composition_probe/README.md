@@ -29,5 +29,12 @@ bash /src/tests/fixtures/expat_composition_probe/run_dual_control.sh
 （`XML_ParserReset → dtdReset → hashTableIterInit`）；fixed（`56967f83`）
 全序数清洁。2026-10-14 实测结果见 `evidence-2026-10-14.json`。
 
+判定不认"出现任意 ASan 报告"：`classify_probe_log.py` 要求 vulnerable 侧
+报告**同时**满足 heap-use-after-free、归因到 `xmlparse.c` 帧、且在父解析器
+重置路径（`XML_ParserReset` + `dtdReset`/`hashTableIterInit`）；fixed 侧
+必须完整收尾且无任何 AddressSanitizer/LeakSanitizer 报告。无关 ASan 故障
+（驱动内 SEGV、泄露报告、解析路径上的 UAF、无 xmlparse 归因的 UAF）一律
+判 UNEXPECTED，脚本非零退出（`DUAL_CONTROL_FAILED`）。
+
 普通 CI **不**运行本探针（需要 expat checkout 与 clang 容器）；单测只断言
 探针组合与证据记录结构（见 `tests/test_expat_composition_probe.py`）。

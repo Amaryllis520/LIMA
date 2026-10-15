@@ -178,14 +178,115 @@ class LogCrossCheckTests(unittest.TestCase):
 class RunnerContractTests(unittest.TestCase):
     """The dual-control runner must fail closed on unexpected results."""
 
-    def test_runner_exits_nonzero_when_the_control_does_not_hold(self):
+    def test_runner_delegates_to_the_strict_classifier(self):
         script = (_FIXTURE / "run_dual_control.sh").read_text(encoding="utf-8")
         self.assertIn("set -e", script)
+        self.assertIn("classify_probe_log.py", script)
+        self.assertIn("vulnerable", script)
+        self.assertIn("fixed", script)
         self.assertIn("DUAL_CONTROL_FAILED", script)
-        self.assertIn('!= "asan-crash"', script)
-        self.assertIn('!= "clean"', script)
         self.assertIn("exit 1", script)
         self.assertIn("exit 2", script)
+
+
+def _load_classifier():
+    import importlib.util
+
+    path = _FIXTURE / "classify_probe_log.py"
+    spec = importlib.util.spec_from_file_location("classify_probe_log", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+class ClassifierTests(unittest.TestCase):
+    """The strict mechanism-signature classifier.
+
+    Review round 3: any ``ERROR: AddressSanitizer`` line used to pass the
+    vulnerable side.  The classifier now demands the exact signature
+    (heap-use-after-free + xmlparse.c attribution + parent-reset path),
+    and these tests feed it synthetic UNRELATED ASan reports that must
+    all be rejected, plus the real saved logs that must be accepted.
+    """
+
+    def setUp(self):
+        self.classify = _load_classifier().classify
+        self.real_vuln = (_FIXTURE / "evidence-2026-10-14.vuln.log").read_text(
+            encoding="utf-8", errors="replace"
+        )
+        self.real_fixed = (_FIXTURE / "evidence-2026-10-14.fixed.log").read_text(
+            encoding="utf-8", errors="replace"
+        )
+
+    def test_accepts_the_real_saved_logs(self):
+        ok, detail = self.classify(self.real_vuln, "vulnerable")
+        self.assertTrue(ok, detail)
+        self.assertIn("parent-reset path", detail)
+        ok, detail = self.classify(self.real_fixed, "fixed")
+        self.assertTrue(ok, detail)
+
+    def test_rejects_non_uaf_asan_report(self):
+        # Unrelated ASan fault: a SEGV inside the driver, xmlparse frames
+        # present -- still not the expected mechanism.
+        synthetic = (
+            "sweep ordinal 3\n"
+            "==1==ERROR: AddressSanitizer: SEGV on unknown address 0x0000\n"
+            "    #0 in main /src/probe.c:50\n"
+            "    #1 in XML_ParserReset xmlparse.c:1218\n"
+        )
+        ok, detail = self.classify(synthetic, "vulnerable")
+        self.assertFalse(ok)
+        self.assertIn("not a heap-use-after-free", detail)
+
+    def test_rejects_uaf_not_attributed_to_the_audited_tu(self):
+        # A real UAF, but the frames sit in the driver/libc only.
+        synthetic = (
+            "==1==ERROR: AddressSanitizer: heap-use-after-free\n"
+            "    #0 in main /src/probe.c:80\n"
+            "    #1 in free /lib/libc.so.6\n"
+        )
+        ok, detail = self.classify(synthetic, "vulnerable")
+        self.assertFalse(ok)
+        self.assertIn("not attributed to xmlparse.c", detail)
+
+    def test_rejects_uaf_off_the_parent_reset_path(self):
+        # UAF inside xmlparse.c but during parsing, never through the
+        # parent reset -- the shared-DTD touch is what the mechanism
+        # requires.
+        synthetic = (
+            "==1==ERROR: AddressSanitizer: heap-use-after-free\n"
+            "    #0 in doContent xmlparse.c:2400\n"
+            "    #1 in XML_Parse xmlparse.c:1900\n"
+            "    #2 in main /src/probe.c:60\n"
+        )
+        ok, detail = self.classify(synthetic, "vulnerable")
+        self.assertFalse(ok)
+        self.assertIn("XML_ParserReset", detail)
+
+    def test_rejects_leak_only_report_on_the_vulnerable_side(self):
+        synthetic = (
+            "==1==ERROR: LeakSanitizer: detected memory leaks\n"
+            "SUMMARY: AddressSanitizer: 976 byte(s) leaked\n"
+        )
+        ok, _ = self.classify(synthetic, "vulnerable")
+        self.assertFalse(ok)
+
+    def test_rejects_crashing_or_incomplete_fixed_side(self):
+        ok, detail = self.classify(self.real_vuln, "fixed")
+        self.assertFalse(ok)
+        self.assertIn("AddressSanitizer report", detail)
+        leak_only = "sweep ordinal 5\n==1==ERROR: LeakSanitizer: detected\n"
+        ok, _ = self.classify(leak_only, "fixed")
+        self.assertFalse(ok)
+        truncated = "sweep ordinal 5\nordinal 5: create failed as designed\n"
+        ok, _ = self.classify(truncated, "fixed")
+        self.assertFalse(ok)
+
+    def test_rejects_clean_vulnerable_side(self):
+        ok, detail = self.classify(self.real_fixed, "vulnerable")
+        self.assertFalse(ok)
+        self.assertIn("completed the sweep cleanly", detail)
 
 
 class RecipeProbeConsistencyTests(unittest.TestCase):
