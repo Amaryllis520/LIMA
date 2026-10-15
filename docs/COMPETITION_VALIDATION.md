@@ -242,6 +242,8 @@ Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、�
 | r6 | rounds=3，AST 预算已修 | inconclusive（required-review 未满足） | 1928 s / 146 调用；8 finding（4603×4 + 2738/3240/5769/6806，全 CWE-416）×8 轮 = 64 实验全清洁。驱动已采用配方（`XML_ParserCreate_MM` + 计数分配器 + 单驱动内扫 N 0–400 + 内部子集 + 外部解析器创建 + 父解析器释放），但缺官方触发组合的三个要件：无外部 SYSTEM 子集与参数实体解析配置（handler 不触发）、编码名传 NULL（失败未定位到 parserInit 编码名复制）、失败后未复用父解析器。注：context==NULL 本身是共享父 DTD 的合法必经语义（2026-10-14 复核纠正，见 §3 补充 2 之 6），此前"空 context 脱离真实路径"的判读有误。配方 v2（PR #302，含纠错与机制探针） |
 | r7 | rounds=3，配方 v2 首战 | inconclusive（required-review 未满足） | 903 s / 51 调用；**零 finding**——16 线索在 scout 评审层全部未升级（配方只进 Specialist 提示词、不影响 scout，判定为模型随机波动而非配方副作用；网关重启后抽查应答正常）。环境注记：发射前网关进程退出致一轮中止（`pilot-r7-aborted-env-down`，六窗拒连→AC5 provider-down=inconclusive 合同真实触发），网关恢复后重跑 |
 | r8 | rounds=3 | inconclusive（fixed 侧线索封顶墙） | 2271 s / 58 调用；**vulnerable 侧首次达成正式判定 failed(no-matching)**（15 线索未触封顶、必需审阅完成——评审加固合同后首次）；3 semantic-supported（1249/3240/6806，**无一在 4603**）×8 轮 = 24 实验全清洁；fixed 侧 16 线索→封顶→unreviewed→inconclusive（案例级判定被 fixed 侧挡下）；一个发现窗遇上游 502/504 瞬断并被如实记录 |
+| r9 | rounds=3 | inconclusive（provider 瞬断） | 642 s / 34 调用；上游 502/504 瞬断击中必需 LLM 的平台评审段 → `vulnerable-review-failed`（AC5 类合同正确触发）；网关两次掉线（进程退出）分别致 r7 前一轮与 r9 首发中止，后者复跑为本轮 |
+| r10 | rounds=3，配额缩放工作树（`c6d01a5`=PR #303） | inconclusive | 1216 s / 76 调用；**3 finding 含 4603（配方 v2 时代首次锁定 CVE 本体位）**；18 线索留存（新配额生效）但模型发现 ≥19 仍触顶→unreviewed→fixed-not-run；8 轮实验全部 **compile 阶段失败**（8 个不同驱动 hash=盲改循环，`error_type=null` 未分类编译失败）。**手动抽验（决定性）**：最终 4603 驱动含完整 v2 组合（SYSTEM 子集+ALWAYS+handler 内 NULL context+"UTF-8"+失败后父解析器操作），仅一处签名笔误 `void inject_realloc`（应为 `void *`）；**修此一字即触发 heap-use-after-free（`XML_ParserFree → dtdDestroy → hashTableIterInit@xmlparse.c:7148`，与官方机制探针同归因）**，日志存维护者本地 |
 
 **结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
 **检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
@@ -283,12 +285,16 @@ bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
    8046（zcode-proxy，glm-5.3 可用，均耗 ~15 s/调用，首轮偶发 3–6 分钟）；
    r5v1 曾被误判挂起而终止（urllib 长读 + 大提示词），后续轮用
    faulthandler 看门狗判活。
-5. **V02 状态**：runtime-confirmed 自动命中仍开放，止损线 10-19 晚；
-   r5–r8 bundle：容器 `/app/output/openharmony/pilot-r{5..8}`。
-   配方 v2 两轮（r7/r8）均未把驱动送上 4603 靶位（r7 scout 零升级、
-   r8 三个 finding 全在非本体位）——**瓶颈回到 scout 升级随机性**
-   （配方可作用点在目标升级之后的 Specialist 实验构造）；配方 v2 对
-   4603 的组合步效果尚未获得公平测试，后续轮优先解决升级方差。
+5. **V02 状态（r10 后收窄到最后一环）**：runtime-confirmed 自动命中仍
+   开放，止损线 10-19 晚；r5–r10 bundle：容器
+   `/app/output/openharmony/pilot-r{5..10}`。r10 已证明：**配方 v2 有效**
+   ——模型在配方指引下写出了机制完整的触发组合，残余差距是一个 C 签名
+   笔误（修一字即触发，见 r10 行）。真正的拦路虎是**平台的编译失败
+   反馈环缺陷**：8 轮 compile 失败全部 `error_type=null` 未分类、编译器
+   报错文本未有效回喂，`_MAX_COMPILE_REPAIR_ROUNDS` 的机械修复机制
+   空转（模型盲改 8 版）。下一步工程项（r11 前置）：编译失败分类为
+   `error_type=compile` 并把有界编译器 stderr 注入修复反馈；线索配额
+   军备问题（18 留存仍触 ≥19 顶）留观。
    **r7 报告口径（PR #302 审阅冻结）**：配方 v2 已写入已知 CVE 的触发
    条件，故 r7 及后续命中一律报告为**对已知案例调优后的自动复现**，
    不得声称无偏检测能力；配方向量含该 CVE 触发条件这一点必须在任何
