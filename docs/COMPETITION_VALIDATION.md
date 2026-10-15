@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 平台管线闭环（Scout→假设→实验→修正→裁决） | `tests/test_platform_evaluation.py`（26 测试，零网络 Fake） | 已验证（Fake，2026-09-11） | 本仓库 unittest；`scripts/run_platform_evaluation.py --fake-llm` 全绿 |
 | 配对基准指标（检测率/误报率/非安全过滤/实验收敛/PoC 稳定性） | `scripts/run_platform_evaluation.py` 全 6 案例 Fake 跑批 | 已验证（Fake，按构造确定性） | 报告 `detection_rate=1.0`、`false_positive_rate=0.0`、`non_security_filter_rate=1.0`、`experiment_convergence=1.0`、`poc_stability=1.0`（脚本是哈希判定，稳定性指标仅真实工作台下有信息量） |
-| 真实模型分类（Specialist/Critic/Scout 走真实 provider） | `scripts/run_platform_evaluation.py`（不带 `--fake-llm`，配 `--provider-url/--model`） | 未验证（Task 10 范围内禁止真实调用，归主 agent 执行） | — |
+| 真实模型分类（Specialist/Critic/Scout 走真实 provider） | `scripts/run_platform_evaluation.py`（不带 `--fake-llm`，glm-5.3 本地网关） | 已验证（glm-5.3，2026-10-11；语义检测 2/4、误报 1/8、非安全过滤 0/1，runtime 类指标受哈希工作台结构性封顶） | `evaluation_data/reports/platform_eval_real_glm53_2026-10-11.json`（§5 补充） |
 | 真实容器 ASan 实证（`runtime-confirmed` 的 D3 证据） | Docker clang-14/ASan 沙箱真实执行 PoC | 未验证（走真实环境验收，独立记录） | — |
 | 真实仓库全链检测 | ResInsight 限定子集（UAF v2 全链） | 已验证（诚实 abstain，2026-09-12，见 §2） | `.superpowers/tmp/uaf-demo-outcome.json` |
 
@@ -80,13 +80,28 @@ OPM 系仓库（如 opm-common / opm-simulators）的论文侧运行尚未执行
 | 平台跑 | 未执行 | — | — |
 | 档案 | 未执行 | — | — |
 
-## 4. OpenHarmony（占位——仅仓库接入差异）
+## 4. OpenHarmony 实战扫描记录（2026-10-07 ~ 10-09）
 
-内存包行为在 OpenHarmony 与油气仓库上同构（设计 §9.8）；接入差异只在
-仓库导入与离线依赖预处理。沙箱不开外网，依赖一律沙箱外预处理；完整
-流程（快照限额放开参数组、tmpfs/内存、受信构建门禁、OpenHarmony 注意
-事项）见 `deploy/competition/README.md` §4/§5 与
-`.env.competition.example`。执行后按 §3 同样格式回填。
+与 §3 的双版本验证模式互补，本节为 master 快照实战扫描模式（真实 Sidecar +
+真实 glm-5.3 全链，检测脚本 `.zcode/tmp/detect.py`，工作区
+`D:\OpenHarmonyPilot\`）。接入差异（仓库导入/离线依赖/快照限额参数组）见
+`deploy/competition/README.md` §4/§5。
+
+| 战役 | 目标（语言） | 耗时/调用 | 产出 | 人工核验终局 |
+|---|---|---|---|---|
+| 首战 cJSON | third_party_cJSON master（C） | 72 s | 0 finding 0 误报 | 干净空手（facts 441 条、0 候选→发现回退→Scout 全否决） |
+| 第二战 dsoftbus | communication_dsoftbus master（C） | 6180 s / 16 实验 | 2 semantic-supported + 1 弃权 | CWE-416@693 锁生命周期竞态：代码级成立、本容器运行时归因未达 D3，按奖励计划表单口径本地留档；CWE-125@853 人工判疑似误报关闭 |
+| 第三战 avrcp | communication_bluetooth_service avrcp_ct_profile.cpp（C++，两轮） | 2602 s / 27 实验 | 1 semantic-supported | **运行时证据闭合**：CWE-476+CWE-416 复合（TOCTOU 空解引用 + 临时 shared_ptr 所有权剥离 UAF）；朴素判空补丁不可修（10 连发双对照），所有权修复 10/10 存活。证据 `.zcode/reports/bt-avrcp-cwe476-verification/`（含 VERIFICATION.md 与 4 份 ASan 日志）；报告草稿留档待处置 |
+| 第四战 l2cap | l2cap_le.c C 栈（C，验收战四轮） | 1454 s / 13 实验 | 1 semantic-supported + 3 弃权 | CWE-416@1540：险模式真（回调-仍挂链-后释放）、当下不可达（唯一回调方 EATT 不重入）——潜伏型 API 契约脆弱性 |
+
+战果驱动的平台修复（提交见 PR #266）：C++ 限定名行定位（`0cd5008`）、
+专家契约字段上限预告（`749b980`）、桩链接策略与 Critic 所有权规则
+（`233a841`）、master→Release/LTS 对齐复核工具（`dc27258`）。
+
+诚实边界：master 扫描不等于受支持 Release/LTS 版本（对齐复核用
+`scripts/check_finding_on_branches.py`）；"专家自主使用桩闭包"目前仅间接
+证据（对比旧战役驱动全灭于编译关 vs 本轮 13/27 实验全部执行）；C++ TU 的
+确定性 facts 层为 0（全靠 LLM 发现回退）。
 
 ## 5. 配对基准（`evaluation_data/platform_cases/`）
 
@@ -105,3 +120,200 @@ OPM 系仓库（如 opm-common / opm-simulators）的论文侧运行尚未执行
   （脚本工作台哈希判定下按构造稳定，真实工作台下该指标才有信息量）。
 - 有效性边界（评测报告内逐条携带）：合成与钉死对不等价于生产检测能力；
   真实 Clang 提取与真实容器 ASan 为独立验收；null 指标≠满分。
+
+
+## 3. OpenHarmony pilot 双版本真实运行（2026-10-07）
+
+**首条真实双版本闭环记录。** 案例为上游 libexpat CVE-2022-43680（CWE-416；OH
+third_party_expat 同源，见 `evaluation_data/openharmony/README.md` 的 OH 构建不受
+影响边界）。
+
+- **基线**：LIMA commit `e81f6c09`（分支 `feat/openharmony-pilot-validation`，
+  Task 1-6 全部落地后的工作树）。脆弱 `5ac714074d2639e0b8bb82aa73ef51c4f7498d29`
+  / 修复 `56967f83d68d5fc750f9e66a9a76756c94c7c173`，快照
+  `D:\OpenHarmonyPilot\expat-up-{vuln,fixed}`（完整克隆、LF 工作区、
+  `_overlay/expat_config.h` 与根 compdb 钉扎）。
+- **环境**：真实 Sidecar（`lima-cxx-analyzer:local`，AST 预算 128 MiB、扫描限额
+  5000/512KiB/20MiB 宿主容器同值）；真实 provider glm-5.3（本地网关，
+  `thinking:disabled`）。
+- **命令**：`scripts/run_openharmony_validation.py --case
+  evaluation_data/openharmony/pilot_case.json --repository-import-root
+  <import root> --output output/openharmony/pilot --cxx-analyzer-url
+  http://cxx-analyzer:8090 --timeout 300 --deadline-seconds 5400
+  --parallelism 1 --dialogue-rounds 2`（容器内执行，退出码 2）。
+- **结果**：整体 `failed`（检测侧）。vulnerable 全链 1087.6 s / 85 LLM 调用 /
+  310,967 reply bytes：6 窗口发现 14 条线索、多个 semantic-supported 发现
+  （CWE-125@3240、CWE-190@7309），无 runtime-confirmed 的 CWE-416 目标命中——
+  按合同判 `vulnerable-no-matching-finding`，不修饰。fixed 全链 145.7 s / 9 调用 /
+  178,623 bytes：0 finding（该侧 passed）。双侧快照覆盖 100%。
+- **证据**：bundle `output/openharmony/pilot/`（10 文件，`SHA256SUMS.json` 宿主侧
+  逐文件重算全通过；AEP 双侧、VEP×2、patch.diff、中文报告含 3+3 矩阵与真实性边界）。
+- **状态表更新**：真实模型分类一行——Scout/Specialist/Critic/Discovery 全部在真实
+  provider 上运行并保持诚实降级语义，记**已验证（glm-5.3，2026-10-07）**；真实容器
+  ASan 实证一行——实验编译/运行真实发生于沙箱（多次 clang++-14+ASan 编译与执行），
+  但自动链路未产出 runtime-confirmed 命中，记**已验证（运行）/runtime-confirmed
+  待达成**；另记同环境手工触发驱动实证（脆弱版目标绑定 heap-use-after-free@
+  xmlparse.c:7148、修复版干净退出，2026-10-04 探针）作为 D3 侧旁证。
+- **已知边界**：发现层当前稳定产出"正确文件 + 正确 CWE 族 + 正确邻域"的
+  semantic-supported（4603 一带多次独立命中），分配失败注入手法已由智能体从通用
+  指引自学（v4-v5 实测），自动 runtime-confirmed 的最后一跃待模型迭代（claude
+  限流冷却中，glm 持续可用）。
+
+
+### 全量项目门禁记录（`scripts/lima.ps1 test`，2026-10-07）
+
+容器面 2890 测试：2 失败 + 6 错误 + 37 跳过。**全部 8 个失败/错误均在
+origin/main（`3045910`）同一容器的基线复跑中同样出现**，为既有测试镜像
+（`lima-cxx-analyzer:test`，构建于旧提交）缺依赖所致，非本分支回归：
+
+| 精确 test id | 既有原因 |
+|---|---|
+| `tests.test_cxx_analyzer.AnalyzerComposeSecurityTests.test_compose_passes_only_admin_configuration_and_shared_snapshot_limits` | 镜像缺 `yaml` |
+| `tests.test_cxx_analyzer.AnalyzerComposeSecurityTests.test_cxx_analyzer_is_an_internal_non_root_read_only_sidecar` | 镜像缺 `yaml` |
+| `tests.test_cxx_analyzer.SourceRuleTests.test_rules_tie_three_distinct_oob_shapes_to_known_object_bounds` | 镜像缺 `yaml` |
+| `tests.test_cxx_analyzer.SourceRuleTests.test_release_rules_exclude_same_pointer_rebinding_controls` | 镜像缺 `yaml` |
+| `unittest.loader._FailedTest.test_build_recipe` | 镜像缺 `yaml`（模块导入失败） |
+| `unittest.loader._FailedTest.test_cxx_memory_evaluation` | 镜像缺 `yaml`（模块导入失败） |
+| `tests.test_cxx_analyzer.SourceScanContainerTests.test_fixture_manifest_is_complete_and_semgrep_marks_only_candidates` | 镜像 semgrep fixture 既有失败 |
+
+另两处运行期现象已定位并处置：`test_v4_baseline_manifest` 双数据集指纹失配为
+Windows 工作区 CRLF 检出伪影（提交内容与 main 逐字节一致；LF 重检出后指纹全部
+吻合，非代码回归）；`ReproContainerTests` 偶发 `asan-runtime-segv-retried` 为
+`cxx_analyzer/repro.py` 文档声明的受限容器 ASan 渲染器噪声类（重试机制消化）。
+本分支新增的 18 个 git 夹具测试在容器内因镜像无 git 干净跳过（宿主全绿）。
+
+### §5 补充：真模型评测首跑（glm-5.3，2026-10-11）
+
+状态表第 3 行落地。报告 `evaluation_data/reports/platform_eval_real_glm53_2026-10-11.json`
+（已做密钥扫描，零泄漏）。**结构性口径**：脚本工作台按 canned 驱动精确哈希判
+PoC，真模型在构造上不可达 runtime 状态——检测率/收敛/PoC 稳定性三项在本
+评测器下对真模型结构性封顶（真容器 ASan 由独立验收线覆盖）。**有效测得**：
+
+| 指标 | 真模型实测 | 解读 |
+|---|---|---|
+| 语义层检测 | 2/4（uaf/null-deref 各 1 finding；overflow 漏报；rebind 因模型伪造 target_id 被 fail-closed 拒绝） | 顶层 detection_rate=0.0 系期望状态锚定 runtime 所致，语义层才是本评测器下真实能力读数 |
+| 误报率 | 1/8（clean 案例 4/4 全零 ✓；FP=非安全案例 fixed 侧） | 误报纪律 7/8 |
+| 非安全过滤 | 0/1 | **真实缺口**：FP 为 CWE-190（词表内）——词表封闭性挡不住算术代码上的溢出假设，过滤需内存安全影响证明（backlog） |
+| 总耗时 | 180 s / 12 revision | — |
+
+### §5 补充 2：检测率指标的真模型口径（backlog）
+
+`run_platform_evaluation.py` 的 detection_rate 以案例期望终态（runtime 锚定）
+为分母，真模型模式下结构性为 0。已立项：增加语义层级补充指标
+（vulnerable 侧产出任意正向状态 finding 的比例），Fake/真模型两模式同口径可算。
+
+### §5 补充 3：误报与非安全过滤判据（V03 冻结，2026-10-14）
+
+真模型评测 FP 1/8、非安全过滤 0/1（§5 补充）之后的判据正式化；统计接线
+归 C01（Issue #294），本节只冻结专业判定规则。
+
+1. **误报判定（FP）**：非正期望修订（fixed/clean/非安全侧）产出任意
+   Finding（`finding_count > 0`，与 C01 J1 同锚）计 1 例；分母 = 非正期望
+   counted 修订数（当前冻结集 8）。**语义层与 runtime 层分开统计**：语义层
+   在偏净代码上产出假设是已知特征（r3/r4 fixed 侧 1/3 个
+   semantic-supported，pilot 合同按目标 cwe+path 判定故不误判）；只有
+   **runtime-confirmed 出现在非正期望侧才是硬误报**（当前 0）。
+2. **非安全案例期望**：全修订零 Finding。现行机制 = 假设合同的封闭内存
+   安全 CWE 词表。实测缺口：唯一 FP 是 CWE-190（词表内）——词表封闭性
+   挡不住纯算术代码上的溢出假设。
+3. **CWE-190 立案边界（冻结）**：非安全案例上的整数溢出假设必须附带
+   **内存安全影响证明**才可立案——溢出值可证明地进入内存操作（分配大小、
+   数组索引、拷贝长度等）且攻击者可控输入可达；仅"溢出存在"不立案。
+   操作化三分类：
+   - 危险：溢出结果直接用作上述内存操作参数，可控输入可达；
+   - 安全近邻：溢出仅进入算术/计数/日志用途，不触内存操作；
+   - 不确定：路径存在但可控性/可达性未证明 → 按**安全**处理（不立案），
+     计入"未定例"诊断计数，不入任何率。
+   立案判定权在维护者；模型侧只允许按此规则过滤，不得自行放宽。
+4. **指标口径**：`false_positive_rate` / `non_security_filter_rate` 维持
+   既有定义与空分母 null 规则（C01 J4）；"未定例"为新增诊断计数，仅记录。
+
+### §3 补充：runtime-confirmed 冲刺四连（2026-10-11，加固后平台重跑）
+
+Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、桩链接策略、所有权
+规则），以同一 expat 案例重冲 runtime-confirmed 自动命中：
+
+| 轮 | 参数 | 终局 | 关键事实 |
+|---|---|---|---|
+| r2 | rounds=2 | inconclusive | Scout 引用不存在的 lead id（模型幻觉引用，fail-closed 正确拒绝） |
+| r3 | rounds=2 | failed（no-matching） | 1494 s / 100 调用 / 16 线索，scout 轮数耗尽（预算剩 60）；3 个 semantic-supported 全落正确函数（doProlog:4603×2=CVE-2022-43680 本体、storeEntityValue:6073） |
+| r4 | rounds=3 | failed（no-matching） | 1022 s / 71 调用；3 个 semantic-supported（doProlog:4603、2738、6806） |
+| r5 | rounds=3，配方 v1 首战 | inconclusive（required-review 未满足） | 1141 s / 76 调用；3 finding 全钉 4603（CWE-416×2 + CWE-415）×8 轮 = 24 实验全清洁（driver sha 全在、零编译错）。当日重建 analyzer 丢失 AST 128 MB 预算 → ast-output-limit → xmlparse.c 必需审阅跳过 → fixed-not-run |
+| r6 | rounds=3，AST 预算已修 | inconclusive（required-review 未满足） | 1928 s / 146 调用；8 finding（4603×4 + 2738/3240/5769/6806，全 CWE-416）×8 轮 = 64 实验全清洁。驱动已采用配方（`XML_ParserCreate_MM` + 计数分配器 + 单驱动内扫 N 0–400 + 内部子集 + 外部解析器创建 + 父解析器释放），但缺官方触发组合的三个要件：无外部 SYSTEM 子集与参数实体解析配置（handler 不触发）、编码名传 NULL（失败未定位到 parserInit 编码名复制）、失败后未复用父解析器。注：context==NULL 本身是共享父 DTD 的合法必经语义（2026-10-14 复核纠正，见 §3 补充 2 之 6），此前"空 context 脱离真实路径"的判读有误。配方 v2（PR #302，含纠错与机制探针） |
+| r7 | rounds=3，配方 v2 首战 | inconclusive（required-review 未满足） | 903 s / 51 调用；**零 finding**——16 线索在 scout 评审层全部未升级（配方只进 Specialist 提示词、不影响 scout，判定为模型随机波动而非配方副作用；网关重启后抽查应答正常）。环境注记：发射前网关进程退出致一轮中止（`pilot-r7-aborted-env-down`，六窗拒连→AC5 provider-down=inconclusive 合同真实触发），网关恢复后重跑 |
+| r8 | rounds=3 | inconclusive（fixed 侧线索封顶墙） | 2271 s / 58 调用；**vulnerable 侧首次达成正式判定 failed(no-matching)**（15 线索未触封顶、必需审阅完成——评审加固合同后首次）；3 semantic-supported（1249/3240/6806，**无一在 4603**）×8 轮 = 24 实验全清洁；fixed 侧 16 线索→封顶→unreviewed→inconclusive（案例级判定被 fixed 侧挡下）；一个发现窗遇上游 502/504 瞬断并被如实记录 |
+
+**结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
+**检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
+未闭合环节**（expat 该 UAF 的触发需要"计数分配器+外部实体+正确分配序号"的
+多步组合，历史上手动战役 v5 的 21 个实验也只到 semantic-supported）。
+附带信号：r3/r4 的 fixed 侧各产出 1/3 个 semantic-supported 假设（pilot 合同
+按目标 cwe+path 判定故 passed）——与配对基准真模型 FP 1/8 的语义层信号一致，
+语义层在偏净代码上会产假设是已知特征，runtime 层是收敛关键。
+r3 排查顺带修复发现层两处盲区（顶行首裸名/宏别名，`1d65100`）。
+bundle：容器 `/app/output/openharmony/pilot-r{2,3,4}`。
+
+### §3 补充 2：配方战役 r5/r6（2026-10-14，CWE 键控配方层首战）
+
+配方层（PR #301，`_SPECIALIST_CWE_RECIPES`）随 r5/r6 首战。诚实判读：
+
+1. **检测层更强了**：r6 产 8 个 semantic-supported，其中 4 个钉 CVE 本体位
+   4603；配方未让检测跑偏。
+2. **实验层仍未闭合，但缺口已定位到组合步（2026-10-14 复核纠错版）**：
+   r6 驱动执行了配方 90%（MM 套件/计数分配器/扫 N/内部子集/子解析器/
+   父释放），漏的是官方回归测试
+   （test_alloc_reset_after_external_entity_parser_create_fail）的三个要件：
+   **外部 SYSTEM 子集 + `XML_PARAM_ENTITY_PARSING_ALWAYS`**（handler 才会
+   触发）、**非空编码名 "UTF-8"**（把分配失败定位到 parserInit 的编码名
+   复制）、**失败后 `XML_ParserReset` 复用父解析器**。勘误：早前判读
+   "空 context 脱离真实路径"有误——`context==NULL` 恰是 `if (! context)
+   newDtd = oldDtd;` 共享父 DTD 的合法必经语义，官方 handler 拒绝的是
+   非 NULL context。配方 v2（PR #302，含纠错）与机制探针双对照已按正确
+   组合落地（见第 6 条）；r7 待其合并后打。
+3. **案例判定层出现新结构性墙**：r4 之后合入的评审第 5 轮 P2 加固规定
+   线索封顶时被裁线索的 TU 记 unreviewed → 必需审阅（target_paths 全集）
+   未满足 → 整局 inconclusive + fixed-not-run。glm-5.3 在 xmlparse.c
+   （236 KB 单 TU）稳定发现 >16 线索，故本案例在此模型下恒 inconclusive。
+   该合同是诚实记账（覆盖缺口不得读作干净），不是缺陷；但 PASSED 判定
+   需要线索量下降或按 TU 尺寸调窗/线索配额——决策留维护者，本轮不改。
+4. **环境教训（复跑必读）**：analyzer 容器重建必须带
+   `LIMA_REPOSITORY_IMPORT_PATH=D:\OpenHarmonyPilot` 与
+   `LIMA_CXX_MAX_AST_JSON_BYTES=134217728`（compose 默认 16 MB 会被
+   xmlparse.c 的 78 MB AST 打穿）；LLM 网关已从 .env 的 8045（已停）迁到
+   8046（zcode-proxy，glm-5.3 可用，均耗 ~15 s/调用，首轮偶发 3–6 分钟）；
+   r5v1 曾被误判挂起而终止（urllib 长读 + 大提示词），后续轮用
+   faulthandler 看门狗判活。
+5. **V02 状态**：runtime-confirmed 自动命中仍开放，止损线 10-19 晚；
+   r5–r8 bundle：容器 `/app/output/openharmony/pilot-r{5..8}`。
+   配方 v2 两轮（r7/r8）均未把驱动送上 4603 靶位（r7 scout 零升级、
+   r8 三个 finding 全在非本体位）——**瓶颈回到 scout 升级随机性**
+   （配方可作用点在目标升级之后的 Specialist 实验构造）；配方 v2 对
+   4603 的组合步效果尚未获得公平测试，后续轮优先解决升级方差。
+   **r7 报告口径（PR #302 审阅冻结）**：配方 v2 已写入已知 CVE 的触发
+   条件，故 r7 及后续命中一律报告为**对已知案例调优后的自动复现**，
+   不得声称无偏检测能力；配方向量含该 CVE 触发条件这一点必须在任何
+   对外材料中保持可见；既有"不从单案例外推检测率"的纪律不变。
+6. **组合机理探针双对照（2026-10-14，PR #302 附带）**：按官方用例
+   复刻的探针（`tests/fixtures/expat_composition_probe/`，扫描序数替代
+   固定 count=3），同驱动同配置在冻结对上运行（chain-probe，clang-14
+   +ASan，XML_DTD=1 overlay 两侧逐字节一致）：**vulnerable `5ac71407`
+   heap-use-after-free（触发序数 3，勘误见下）**，栈
+   `XML_ParserReset → dtdReset → hashTableIterInit（xmlparse.c:7148）`，
+   与 2026-10-04 手动实证同归因点；**fixed `56967f83` 全部 64 序数
+   清洁**。此为探针机制验证（正负对照），不是平台 runtime-confirmed，
+   也不是模型战役结果。勘误（2026-10-14 二轮复核）：触发序数为 **3**（日志实锄：序数
+   1/2 创建失败但父重置存活，序数 3 触发；探针与官方 duff 分配器同为
+   "允许 N 次后下一次失败"语义，故序数 3 ≡ 官方 allocation_count=3，
+   失败点为创建起第 4 次分配=parserInit 编码名复制；此前"序数 2/第 3 次
+   分配"的记录有误）。原始日志已随夹具入库供交叉核对。
+
+### §3 补充 3：V06 avrcp 补丁双对照复跑（2026-10-14）
+
+平台定级 semantic-supported → 不满足 #287 自动闭环前提，走手工双对照
+（记录：`.zcode/reports/2026-10-14-v06-avrcp-patch-regression.md`，工件
+`v06-rerun-2026-10-14/`）。全量重建三变体后同 PoC 同锤击：**原版 9/10
+TU 归因崩溃；判空补丁 8/10 崩溃且 8/8 全为 heap-use-after-free**（帧钉
+GetEventId ← ProcessVendorNotificationTimeout(patched:1499)，朴素补丁
+不可修复更硬）；**所有权修复 0/10 崩溃 + 完整 soak 94 s rc=0
+（checked=117812 全存活）**。与 10-07 基线同向。未验证项：正常业务功能
+面回归、真机/模拟器（与报告草稿 §9 同口径）。

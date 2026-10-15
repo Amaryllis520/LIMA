@@ -57,10 +57,6 @@ _UAF_FACTS_TOOL: Final = "uaf-facts"
 _UAF_FACTS_BUILD_CONTEXT_FIELDS: Final = frozenset({"mode"})
 _UAF_FACTS_BUILD_CONTEXT_MODES: Final = frozenset({"snapshot-compdb", "heuristic"})
 MAX_UAF_TRANSLATION_UNITS: Final = 16
-# The repro request carries the untrusted driver text, so its body cap is
-# deliberately wider than the legacy 64 KiB one; the old endpoints keep
-# MAX_REQUEST_BYTES unchanged.
-REPRO_MAX_REQUEST_BYTES: Final = 512 * 1024
 MAX_REPRO_SOURCES: Final = 16
 MAX_REPRO_DRIVER_BYTES: Final = 256 * 1024
 _REPRO_REQUEST_FIELDS: Final = frozenset(
@@ -73,6 +69,17 @@ _REPRO_REQUEST_FIELDS: Final = frozenset(
         "driver_code",
     }
 )
+_REPRO_OPTIONAL_FIELDS: Final = frozenset({"source_overrides"})
+_MAX_REPRO_SOURCE_OVERRIDES: Final = 4
+_MAX_REPRO_SOURCE_OVERRIDE_BYTES: Final = 512 * 1024
+# A JSON string can expand each input byte into six escape bytes. Cover
+# the complete driver/override budget. Astral path characters require two
+# unicode escapes (12 bytes); reserve legacy-size space for the envelope.
+# Other endpoints retain the legacy MAX_REQUEST_BYTES ceiling.
+REPRO_MAX_REQUEST_BYTES: Final = 6 * (
+    MAX_REPRO_DRIVER_BYTES
+    + _MAX_REPRO_SOURCE_OVERRIDES * _MAX_REPRO_SOURCE_OVERRIDE_BYTES
+) + 12 * 1024 * (MAX_REPRO_SOURCES + _MAX_REPRO_SOURCE_OVERRIDES) + MAX_REQUEST_BYTES
 
 def _bound_response_lists(
     findings: tuple[NormalizedFinding, ...], diagnostics: list[object],
@@ -487,6 +494,7 @@ def _extract_uaf_unit(
         context.relative_directory,
         deadline,
         timeout_seconds=settings.step_timeout_seconds,
+        max_output_bytes=settings.max_ast_json_bytes,
     )
     if ast_json is None:
         gaps = diagnostics if diagnostics else [uaf_scan.GAP_AST_UNAVAILABLE]
@@ -600,7 +608,9 @@ def _validate_repro_payload(payload: object) -> dict[str, object]:
         if isinstance(payload, dict)
         else None
     )
-    if type(payload) is not dict or set(payload) != _REPRO_REQUEST_FIELDS:
+    if type(payload) is not dict or not (
+        set(payload) - _REPRO_OPTIONAL_FIELDS == _REPRO_REQUEST_FIELDS
+    ):
         raise RequestError("invalid_request", request_id=request_id)
 
     if request_id is None:
@@ -641,12 +651,44 @@ def _validate_repro_payload(payload: object) -> dict[str, object]:
     ):
         raise RequestError("invalid_request", request_id=request_id)
 
+    source_overrides = payload.get("source_overrides")
+    if source_overrides is not None:
+        # Patch-regression replay (scoring item 6): bounded map of
+        # inventory path -> patched content.  Path membership is
+        # cross-checked against the prepared snapshot inside run_repro;
+        # here only the wire shape and byte bounds are enforced.
+        if (
+            not isinstance(source_overrides, dict)
+            or not source_overrides
+            or len(source_overrides) > _MAX_REPRO_SOURCE_OVERRIDES
+        ):
+            raise RequestError("invalid_request", request_id=request_id)
+        for path, content in source_overrides.items():
+            if (
+                not isinstance(path, str)
+                or not path
+                or len(path) > 1024
+                or PurePosixPath(path).is_absolute()
+                or "\\" in path
+                or "\x00" in path
+                or any(segment in {"", ".", ".."} for segment in path.split("/"))
+                or not isinstance(content, str)
+                or not content
+                or "\x00" in content
+                or len(content.encode("utf-8"))
+                > _MAX_REPRO_SOURCE_OVERRIDE_BYTES
+            ):
+                raise RequestError(
+                    "invalid_request", request_id=request_id
+                )
+
     return {
         "request_id": request_id,
         "repository_key": normalized_key,
         "snapshot_sha256": snapshot_sha256,
         "source_files": source_files,
         "driver_code": driver_code,
+        "source_overrides": source_overrides,
     }
 
 
@@ -689,6 +731,8 @@ def repro_request(payload: object, settings: AnalyzerSettings) -> dict[str, obje
             request["driver_code"],  # type: ignore[arg-type]
             deadline=deadline,
             timeout_seconds=settings.step_timeout_seconds,
+            settings=settings,
+            source_overrides=request["source_overrides"],
         )
         snapshot.verify_inventory(deadline)
     except AnalysisDeadlineExceeded as exc:
@@ -718,6 +762,10 @@ def repro_request(payload: object, settings: AnalyzerSettings) -> dict[str, obje
             "driver_sha256": execution.artifacts["driver_sha256"],
             "binary_sha256": execution.artifacts["binary_sha256"],
             "elapsed_seconds": execution.elapsed_seconds,
+            **(
+                {"source_overrides_sha256": execution.artifacts["source_overrides_sha256"]}
+                if request["source_overrides"] is not None else {}
+            ),
         },
     }
 

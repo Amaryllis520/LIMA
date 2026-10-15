@@ -10,6 +10,7 @@ echo identities and the experiment audit block.  The ``/v1/analyze``,
 unchanged.
 """
 
+import hashlib
 import io
 import json
 import tempfile
@@ -123,6 +124,76 @@ def prepared_snapshot_mock(files=SOURCE_FILES):
 
 
 class ServerContractTests(unittest.TestCase):
+
+    def test_maximum_overrides_fit_serialized_request_budget(self):
+        # Astral characters expand to two JSON unicode escapes per path
+        # character; payload text can expand to six bytes per input byte.
+        paths = ["src/" + "\U0001f600" * 1000 + f"{i}.cpp" for i in range(16)]
+        overrides = {path: "\x01" * (512 * 1024) for path in paths[:4]}
+        payload = repro_request(source_overrides=overrides,
+                                source_files=paths,
+                                driver_code="\x01" * MAX_DRIVER_BYTES)
+        body = json.dumps(payload).encode("utf-8")
+        execution = run_execution()
+        execution.artifacts["source_overrides_sha256"] = {
+            path: hashlib.sha256(text.encode("utf-8")).hexdigest()
+            for path, text in overrides.items()
+        }
+        with patch("cxx_analyzer.server.prepare_snapshot",
+                   return_value=prepared_snapshot_mock()), patch(
+                       "cxx_analyzer.server.run_repro", return_value=execution):
+            status, _response = analyzer_server.dispatch_request(
+                "POST", "/v1/repro", "application/json", body, analyzer_settings(),
+            )
+        self.assertEqual(200, status)
+
+    def test_override_digests_survive_server_response(self):
+        digests = {"src/vuln.cpp": hashlib.sha256(b"int fixed;").hexdigest()}
+        execution = run_execution()
+        execution.artifacts["source_overrides_sha256"] = digests
+        with patch("cxx_analyzer.server.prepare_snapshot",
+                   return_value=prepared_snapshot_mock()), patch(
+                       "cxx_analyzer.server.run_repro", return_value=execution):
+            response = analyzer_server.repro_request(
+                repro_request(source_overrides={"src/vuln.cpp": "int fixed;"}),
+                analyzer_settings(),
+            )
+        self.assertEqual(digests, response["experiment"]["source_overrides_sha256"])
+
+    def test_source_overrides_field_validated(self):
+        # Patch-regression replay: the optional source_overrides field is
+        # bounded on the wire.  A valid shape passes validation (the
+        # request then proceeds to the snapshot stage, which rejects this
+        # fixture's missing import root -- proving validation let it
+        # through); every invalid shape dies with invalid_request.
+        with self.assertRaises(analyzer_server.RequestError) as caught:
+            analyzer_server.repro_request(
+                repro_request(
+                    source_overrides={"src/vuln.cpp": "int patched;\n"}
+                ),
+                analyzer_settings(),
+            )
+        self.assertNotEqual("invalid_request", caught.exception.code)
+
+        for bad in (
+            {"src/vuln.cpp": ""},
+            {"": "int x;\n"},
+            {"../escape.cpp": "int x;\n"},
+            {"/etc/escape.cpp": "int x;\n"},
+            {"src\\escape.cpp": "int x;\n"},
+            {"src/./escape.cpp": "int x;\n"},
+            {"src//escape.cpp": "int x;\n"},
+            {"src/\x00escape.cpp": "int x;\n"},
+            {"src/vuln.cpp": "x" * (512 * 1024 + 1)},
+            {f"p{index}.c": "int x;\n" for index in range(5)},
+            "not-a-mapping",
+        ):
+            with self.assertRaises(analyzer_server.RequestError) as caught:
+                analyzer_server.repro_request(
+                    repro_request(source_overrides=bad), analyzer_settings(),
+                )
+            self.assertEqual("invalid_request", caught.exception.code)
+
     def test_unknown_request_field_rejected(self):
         with self.assertRaises(analyzer_server.RequestError) as caught:
             analyzer_server.repro_request(repro_request(extra=True), analyzer_settings())
@@ -452,6 +523,101 @@ def valid_repro_response_payload():
 
 
 class ClientContractTests(unittest.TestCase):
+    @patch("lima.cxx_memory.uuid.uuid4", return_value=REQUEST_ID)
+    def test_client_consumes_server_override_audit(self, _uuid4):
+        overrides = {"src/vuln.cpp": "int fixed;\n"}
+        digests = {path: hashlib.sha256(text.encode("utf-8")).hexdigest()
+                   for path, text in overrides.items()}
+        execution = run_execution()
+        execution.artifacts["source_overrides_sha256"] = digests
+
+        def opener(request, timeout):
+            status, payload = analyzer_server.dispatch_request(
+                "POST", "/v1/repro", "application/json", request.data, analyzer_settings(),
+            )
+            self.assertEqual(200, status)
+            return FakeResponse(json.dumps(payload).encode("utf-8"))
+
+        with patch("cxx_analyzer.server.prepare_snapshot",
+                   return_value=prepared_snapshot_mock()), patch(
+                       "cxx_analyzer.server.run_repro", return_value=execution) as run:
+            result = repro_client(opener).repro_compile_run(
+                REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE,
+                source_overrides=overrides,
+            )
+        self.assertEqual(overrides, run.call_args.kwargs["source_overrides"])
+        self.assertEqual(digests, result.source_overrides_sha256)
+
+    @patch("lima.cxx_memory.uuid.uuid4", return_value=REQUEST_ID)
+    def test_client_requires_matching_override_digests(self, _uuid4):
+        overrides = {"src/vuln.cpp": "int fixed;"}
+        expected = {path: hashlib.sha256(text.encode("utf-8")).hexdigest()
+                    for path, text in overrides.items()}
+        payload = valid_repro_response_payload()
+        payload["experiment"]["source_overrides_sha256"] = expected
+        result = repro_client(RecordingOpener(payload)).repro_compile_run(
+            REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE,
+            source_overrides=overrides,
+        )
+        self.assertEqual(expected, result.source_overrides_sha256)
+        for bad in (None, {}, {"src/vuln.cpp": "a" * 64},
+                    {"src/other.cpp": expected["src/vuln.cpp"]},
+                    {"../escape.cpp": expected["src/vuln.cpp"]},
+                    {"src/vuln.cpp": "invalid"}):
+            with self.subTest(digests=bad):
+                invalid = valid_repro_response_payload()
+                if bad is not None:
+                    invalid["experiment"]["source_overrides_sha256"] = bad
+                with self.assertRaises(CxxAnalyzerProtocolError):
+                    repro_client(RecordingOpener(invalid)).repro_compile_run(
+                        REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE,
+                        source_overrides=overrides,
+                    )
+        with self.assertRaises(CxxAnalyzerProtocolError):
+            repro_client(RecordingOpener(payload)).repro_compile_run(
+                REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE,
+            )
+
+    @patch("lima.cxx_memory.uuid.uuid4", return_value=REQUEST_ID)
+    def test_repro_compile_run_sends_source_overrides(self, _uuid4):
+        overrides = {"src/vuln.cpp": "int patched;\n"}
+        payload = valid_repro_response_payload()
+        payload["experiment"]["source_overrides_sha256"] = {
+            path: hashlib.sha256(text.encode("utf-8")).hexdigest()
+            for path, text in overrides.items()
+        }
+        opener = RecordingOpener(payload)
+        client = repro_client(opener)
+        client.repro_compile_run(
+            REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE,
+            source_overrides=overrides,
+        )
+        self.assertEqual(
+            overrides,
+            json.loads(opener.request.data.decode("utf-8"))[
+                "source_overrides"
+            ],
+        )
+
+        # Without overrides the field stays absent (wire compatibility).
+        second = RecordingOpener(valid_repro_response_payload())
+        repro_client(second).repro_compile_run(
+            REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE
+        )
+        self.assertNotIn(
+            "source_overrides",
+            json.loads(second.request.data.decode("utf-8")),
+        )
+
+    @patch("lima.cxx_memory.uuid.uuid4", return_value=REQUEST_ID)
+    def test_repro_compile_run_rejects_invalid_overrides(self, _uuid4):
+        client = repro_client(RecordingOpener(valid_repro_response_payload()))
+        with self.assertRaises(CxxAnalyzerProtocolError):
+            client.repro_compile_run(
+                REPOSITORY_KEY, SNAPSHOT_SHA256, SOURCE_FILES, DRIVER_CODE,
+                source_overrides={"src/vuln.cpp": ""},
+            )
+
     @patch("lima.cxx_memory.uuid.uuid4", return_value=REQUEST_ID)
     def test_repro_compile_run_validates_response_schema(self, _uuid4):
         opener = RecordingOpener(valid_repro_response_payload())

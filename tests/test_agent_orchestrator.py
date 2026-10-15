@@ -67,6 +67,14 @@ try:  # platform module under test (RED until implemented)
 except ImportError:  # pragma: no cover - RED phase
     run_platform_review = None
 
+try:  # public hit truth shared with pilot replay (RED until Task 1 lands)
+    from lima.agent_orchestrator import (
+        experiment_matches_target,
+        repro_driver_relative_path,
+    )
+except ImportError:  # pragma: no cover - RED phase
+    experiment_matches_target = None
+
 REPO_KEY = "team/project"
 SNAPSHOT = "a" * 64
 CONTEXT = "c" * 64
@@ -269,9 +277,10 @@ class ScriptedPlatformTransport:
     reply text or exception instances raised verbatim.
     """
 
-    def __init__(self, specialist=(), critic=()):
+    def __init__(self, specialist=(), critic=(), discovery=()):
         self.specialist = list(specialist)
         self.critic = list(critic)
+        self.discovery = list(discovery)
         self.calls = []
         self.timeouts = []
 
@@ -289,12 +298,21 @@ class ScriptedPlatformTransport:
             if CRITIC_ROLE in payload["messages"][0]["content"]
         ])
 
+    @property
+    def discovery_calls(self):
+        return len([
+            payload for payload in self.calls
+            if "Discovery agent" in payload["messages"][0]["content"]
+        ])
+
     def __call__(self, provider, base_url, api_key, payload, timeout,
                  extra_headers=None, max_bytes=None):
         self.calls.append(payload)
         self.timeouts.append(timeout)
         system = payload["messages"][0]["content"]
-        if SPECIALIST_ROLE in system:
+        if "Discovery agent" in system:
+            queue = self.discovery
+        elif SPECIALIST_ROLE in system:
             queue = self.specialist
         elif CRITIC_ROLE in system:
             queue = self.critic
@@ -346,6 +364,12 @@ def critic_json(
         "rationale": rationale,
         "revised_driver_code": revised_driver,
     })
+
+
+def discovery_json(leads):
+    """One scripted Discovery reply: dicts with path/line/summary/function."""
+
+    return json.dumps({"leads": list(leads)})
 
 
 # ------------------------------------------------------------- experiments
@@ -847,6 +871,959 @@ class RealChainHitContractTests(unittest.TestCase):
             record.kind == "runtime" and record.source == "asan"
             for record in target.evidence_records
         ))
+
+
+class PublicHitTruthContractTests(unittest.TestCase):
+    """The public hit truth the platform loop and pilot replay share."""
+
+    def _match(self, observation, cwe="CWE-416", target_path=UNIT):
+        return experiment_matches_target(
+            observation, cwe,
+            target_path=target_path,
+            driver_paths=(repro_driver_relative_path(_DEFAULT_DRIVER),),
+        )
+
+    def test_real_uaf_report_matches_target(self):
+        observation = observation_from(repro_response())
+        # The protocol shape: a parsed ASan report forces ok=False, and the
+        # match must survive that.
+        self.assertIs(False, observation.ok)
+        self.assertEqual("run", observation.stage)
+        self.assertTrue(self._match(observation))
+
+    def test_driver_self_crash_never_matches(self):
+        self.assertFalse(
+            self._match(driver_self_crash()),
+            "a crash inside the PoC driver must not match the target",
+        )
+
+    def test_unknown_file_never_matches(self):
+        self.assertFalse(self._match(unknown_file_crash()))
+
+    def test_cwe_mismatch_never_matches(self):
+        observation = observation_from(repro_response())
+        self.assertFalse(self._match(observation, cwe="CWE-120"))
+
+    def test_compile_stage_never_matches(self):
+        observation = observation_from(
+            repro_response(
+                stage="compile",
+                asan_report=None,
+                diagnostics=("driver.cpp:1:1: error: unknown type name 'x'",),
+            )
+        )
+        self.assertEqual("compile", observation.stage)
+        self.assertFalse(self._match(observation))
+
+    def test_repro_driver_relative_path_is_public(self):
+        self.assertEqual(
+            repro_driver_relative_path(_DEFAULT_DRIVER),
+            _repro_driver_relative_path(_DEFAULT_DRIVER),
+        )
+        self.assertTrue(
+            repro_driver_relative_path(_DEFAULT_DRIVER).startswith(
+                "build/repro_driver_"
+            )
+        )
+
+
+class DiscoveryFallbackTests(unittest.TestCase):
+    """Facts-instrument abstention hands discovery to the Discovery agent.
+
+    The agent receives exactly the audited translation units (never the
+    sought answer), its leads flow through the ordinary Scout review, and
+    the lead source is recorded in the outcome diagnostics.
+    """
+
+    def test_discovery_lead_runs_the_full_chain(self):
+        transport = ScriptedPlatformTransport(
+            specialist=[hypothesis_json()],
+            critic=[critic_json()],
+            discovery=[discovery_json([{
+                "path": UNIT,
+                "line": 0,
+                "function": "leak",
+                "summary": "shared object freed on a child error path",
+            }])],
+        )
+        outcome = _run(
+            llm_transport=transport,
+            analyzer=None,
+            leads=(),
+            workbench=FakeWorkbench([uaf_hit()]),
+        )
+        self.assertEqual(1, len(outcome.findings))
+        self.assertEqual("runtime-confirmed", outcome.targets[0].state)
+        self.assertEqual(UNIT, outcome.targets[0].path)
+        # The function name resolved mechanically to the definition line.
+        self.assertEqual(7, outcome.targets[0].line)
+        self.assertTrue(
+            any(
+                "leads-from-llm-discovery: 1 leads" in note
+                for note in outcome.diagnostics
+            ),
+            outcome.diagnostics,
+        )
+        self.assertEqual(1, transport.discovery_calls)
+
+    def test_discovery_snippet_lines_cover_the_function(self):
+        from lima.agent_orchestrator import _discovery_snippet_lines
+
+        # leak() spans lines 7..31 in UAF_SOURCE; the evidence (free at 20,
+        # use at 30) is far past the default +-10 snippet window.
+        self.assertEqual(26, _discovery_snippet_lines(UAF_SOURCE, 7, "leak"))
+        self.assertEqual(0, _discovery_snippet_lines(UAF_SOURCE, 7, ""))
+        # No column-0 closing brace within the bound degrades to a wide
+        # fallback rather than a cramped default window.
+        self.assertEqual(
+            120, _discovery_snippet_lines("int f(void) {\n", 1, "f")
+        )
+
+    def test_discovery_line_resolves_cpp_qualified_definitions(self):
+        from lima.agent_orchestrator import _resolve_discovery_line
+
+        # Real first-C++-battle failure (avrcp_ct_profile.cpp): every lead
+        # was dropped as unlocatable because the prefix class rejected the
+        # '::' scope qualifier of out-of-class method definitions.
+        source = (
+            "int Foo::Bar(int x);\n"                    # qualified prototype
+            "int Foo::Bar(int x)\n"                     # definition -> line 2
+            "{\n"
+            "    return x;\n"
+            "}\n"
+            "const std::string &Foo::Baz(void)\n"       # ref return -> line 6
+            "{\n"
+            "    static std::string s;\n"
+            "    return s;\n"
+            "}\n"
+            "std::vector<uint8_t> Foo::Qux(void)\n"     # template -> line 11
+            "{ return {}; }\n"
+        )
+        self.assertEqual(2, _resolve_discovery_line(source, "Bar", 0))
+        self.assertEqual(6, _resolve_discovery_line(source, "Baz", 0))
+        self.assertEqual(11, _resolve_discovery_line(source, "Qux", 0))
+        self.assertIsNone(_resolve_discovery_line(source, "Nopes", 0))
+
+    def test_discovery_line_matches_column_zero_names_and_macro_alias(self):
+        # Real pilot-r3 follow-up: expat's public API definitions put the
+        # bare name at column zero (XML_Parser XMLCALL\nXML_Foo(...)), which
+        # the mandatory-prefix pattern could never match; and C codebases
+        # commonly reach public functions through object-like macro aliases.
+        # (The r3 lead that motivated the investigation named a hallucinated
+        # function and stays correctly dropped -- name compliance is the
+        # model's job, alias following just covers the legitimate pattern.)
+        from lima.agent_orchestrator import _resolve_discovery_line
+
+        source = (
+            "#define shortName XML_RealName\n"
+            "XML_Parser XMLCALL\n"
+            "XML_RealName(XML_Parser oldParser) {\n"
+            "    return oldParser;\n"
+            "}\n"
+        )
+        # Column-zero definition resolves via its return-type line.
+        self.assertEqual(2, _resolve_discovery_line(source, "XML_RealName", 0))
+        # The macro alias follows one hop to the real definition.
+        self.assertEqual(2, _resolve_discovery_line(source, "shortName", 0))
+        # A self-referential alias must not loop.
+        source2 = "#define loop loop\nint loop(void) {\n    return 0;\n}\n"
+        self.assertEqual(2, _resolve_discovery_line(source2, "loop", 0))
+
+    def test_deadline_before_scout_marks_lead_units_unreviewed(self):
+        # Review round 5 (P1): when the last Discovery reply lands after
+        # the deadline, the Scout never runs; the units hosting the leads
+        # must surface as unreviewed so a pair validator reads the review
+        # as inconclusive instead of a clean pass.
+        import json as _json
+        from unittest.mock import patch
+
+        from lima import agent_orchestrator as orchestration
+
+        unit = "src/a.c"
+        root = tempfile.mkdtemp(suffix="-scout-deadline")
+        self.addCleanup(lambda: _rmtree(root))
+        workspace = _write_cxx_repo(root, name=unit)
+        ticks = [0.0]
+
+        def send_then_expire(*args, **kwargs):
+            ticks[0] = 2.0
+            return _json.dumps(
+                {"leads": [{"path": unit, "line": 1, "summary": "review a"}]}
+            )
+
+        with patch.object(
+            orchestration, "send_semantic_request",
+            side_effect=send_then_expire,
+        ), patch.object(
+            orchestration.time, "monotonic",
+            side_effect=lambda: ticks[0],
+        ):
+            outcome = orchestration.run_platform_review(
+                None, workspace,
+                repository_key="scout-deadline",
+                snapshot_hash=workspace.inventory().fingerprint(),
+                translation_units=(unit,),
+                mode="required",
+                llm_config={"provider": "custom", "model": "m"},
+                deadline_seconds=1,
+            )
+        self.assertEqual(0, outcome.stats.scout_calls)
+        self.assertIn(unit, outcome.unreviewed_units)
+
+    def test_scout_unresolved_leads_mark_units_unreviewed(self):
+        # Review round 6 (P1): a Scout that starts but stops mid-flight
+        # (deadline crossed during it, or its rounds exhausted with the
+        # lead never resolved) returns unresolved_leads -- the outcome
+        # must carry those units as unreviewed, never a clean pass.
+        import json as _json
+        from unittest.mock import patch
+
+        from lima import agent_orchestrator as orchestration
+        from lima import agent_scout as scout
+
+        for scenario in ("deadline_during_scout", "rounds_exhausted"):
+            with self.subTest(scenario=scenario):
+                unit = "src/a.c"
+                root = tempfile.mkdtemp(suffix="-scout-unresolved")
+                self.addCleanup(lambda: _rmtree(root))
+                workspace = _write_cxx_repo(root, name=unit)
+                ticks = [0.0]
+
+                def scout_reply(*args, **kwargs):
+                    if scenario == "deadline_during_scout":
+                        ticks[0] = 2.0
+                    return "[]"
+
+                def discovery_reply(*args, **kwargs):
+                    return _json.dumps(
+                        {"leads": [
+                            {"path": unit, "line": 1, "summary": "review a"},
+                        ]}
+                    )
+
+                with patch.object(
+                    orchestration, "send_semantic_request",
+                    side_effect=discovery_reply,
+                ), patch.object(
+                    scout, "post_chat_completion_text",
+                    side_effect=scout_reply,
+                ), patch.object(
+                    orchestration.time, "monotonic",
+                    side_effect=lambda: ticks[0],
+                ):
+                    outcome = orchestration.run_platform_review(
+                        None, workspace,
+                        repository_key="scout-unresolved",
+                        snapshot_hash=workspace.inventory().fingerprint(),
+                        translation_units=(unit,),
+                        mode="required",
+                        llm_config={
+                            "provider": "custom",
+                            "base_url": "https://invalid.example",
+                            "model": "m",
+                        },
+                        deadline_seconds=1,
+                    )
+                self.assertIn(unit, outcome.unreviewed_units)
+                self.assertTrue(any(
+                    note.startswith("scout: ")
+                    for note in outcome.diagnostics
+                ), outcome.diagnostics)
+
+    def test_discovery_result_cap_marks_dropped_lead_units_unreviewed(self):
+        # Review round 5 (P2): leads dropped by the global result cap were
+        # never reviewed; their units join the unreviewed set so a
+        # zero-positive outcome cannot be read as full coverage.
+        import json as _json
+        from unittest.mock import patch
+
+        from lima import agent_orchestrator as orchestration
+        from lima.cxx_agent_tools import CxxAgentBudget
+
+        source = "\n".join(
+            f"int f{index}(void) {{ return {index}; }}"
+            for index in range(3300)
+        )
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return source
+
+        windows = orchestration._split_windows(source)
+        replies = [
+            _json.dumps({"leads": [
+                {"path": "parser.c", "line": 1 + index, "summary": "s"}
+                for index in range(8)
+            ]})
+            for _ in windows
+        ]
+        with patch.object(
+            orchestration, "send_semantic_request", side_effect=replies,
+        ):
+            leads, notes, unreviewed = orchestration._discover_leads(
+                {"provider": "custom", "model": "m"}, _FlatWorkspace(),
+                ("parser.c",), 60, None, CxxAgentBudget(), "required",
+            )
+        self.assertGreater(len(windows) * 8, len(leads))
+        self.assertIn("llm-discovery-leads-capped", notes)
+        self.assertIn("parser.c", unreviewed)
+
+    def test_discovery_abstain_keeps_no_leads_outcome(self):
+        transport = ScriptedPlatformTransport(
+            discovery=[discovery_json([])],
+        )
+        outcome = _run(
+            llm_transport=transport,
+            analyzer=None,
+            leads=(),
+            workbench=FakeWorkbench([uaf_hit()]),
+        )
+        self.assertEqual((), outcome.targets)
+        self.assertEqual((), outcome.findings)
+        self.assertIn("no-leads-available", outcome.diagnostics)
+        # The attempt itself is recorded: discovery ran and found nothing.
+        self.assertTrue(
+            any(
+                "leads-from-llm-discovery: 0 leads" in note
+                for note in outcome.diagnostics
+            ),
+            outcome.diagnostics,
+        )
+
+    def test_discovery_rechecks_deadline_per_window(self):
+        # The reviewer probe: the deadline was computed once before the
+        # window loop, so windows kept being sent after it passed.  The
+        # budget must be re-derived per window -- the first window gets a
+        # deadline-bounded timeout, and once the deadline passes no
+        # further window is sent at all.
+        from lima import agent_orchestrator
+
+        big_source = "\n".join(
+            f"int filler_{index}(void) {{ return {index}; }}"
+            for index in range(4000)
+        )
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return big_source
+
+        ticks = iter([100.0])
+
+        def fake_monotonic():
+            try:
+                return next(ticks)
+            except StopIteration:
+                return 103.0
+
+        sends = []
+
+        def fake_send(resolved, system, user, timeout, budget):
+            sends.append(timeout)
+            return discovery_json([])
+
+        with patch.object(
+            agent_orchestrator, "send_semantic_request", fake_send,
+        ), patch.object(
+            agent_orchestrator.time, "monotonic", fake_monotonic,
+        ):
+            leads, notes, unreviewed = agent_orchestrator._discover_leads(
+                {"model": "probe"}, _FlatWorkspace(), ("big.c",),
+                60, 102.0, CxxAgentBudget(
+                    max_calls=8, max_output_bytes=1_048_576,
+                ), "required",
+            )
+        self.assertEqual((), leads)
+        self.assertEqual(
+            [2], sends,
+            "the first window must be bounded by the remaining budget",
+        )
+        self.assertIn(
+            "llm-discovery-skipped: deadline exceeded", notes,
+        )
+        # Round 2 review: the unit completed one window but the deadline
+        # cut the rest, so its coverage is partial -- it must land in the
+        # unaudited set, not read as a clean review.
+        self.assertEqual(frozenset({"big.c"}), unreviewed)
+
+    def test_discovery_deadline_before_first_window_marks_unit_unreviewed(self):
+        # Deadline already in the past: not a single window is sent, so
+        # the whole unit lands in the unaudited set for the caller to
+        # surface as inconclusive.
+        from lima import agent_orchestrator
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return "int f(void) { return 0; }"
+
+        sends = []
+
+        def fake_send(resolved, system, user, timeout, budget):
+            sends.append(timeout)
+            return discovery_json([])
+
+        with patch.object(
+            agent_orchestrator, "send_semantic_request", fake_send,
+        ), patch.object(
+            agent_orchestrator.time, "monotonic", lambda: 200.0,
+        ):
+            leads, notes, unreviewed = agent_orchestrator._discover_leads(
+                {"model": "probe"}, _FlatWorkspace(), ("small.c",),
+                60, 100.0, CxxAgentBudget(
+                    max_calls=8, max_output_bytes=1_048_576,
+                ), "required",
+            )
+        self.assertFalse(sends)
+        self.assertEqual((), leads)
+        self.assertIn("llm-discovery-skipped: deadline exceeded", notes)
+        self.assertEqual(frozenset({"small.c"}), unreviewed)
+
+    def test_discovery_transport_failure_marks_units_unreviewed(self):
+        # Review finding 1: with every Discovery window failing transport
+        # the run still returns normally with zero findings, so the
+        # outcome must carry the unaudited scope explicitly instead of
+        # reading as a clean no-leads review.
+        transport = ScriptedPlatformTransport(
+            discovery=[LLMTransportError("gateway down")],
+        )
+        outcome = _run(
+            llm_transport=transport,
+            analyzer=None,
+            leads=(),
+            workbench=FakeWorkbench([uaf_hit()]),
+        )
+        self.assertEqual((), outcome.findings)
+        self.assertEqual((), outcome.targets)
+        self.assertEqual((UNIT,), outcome.unreviewed_units)
+        self.assertTrue(
+            any(
+                "llm-discovery-window-transport-failed" in note
+                for note in outcome.diagnostics
+            ),
+            outcome.diagnostics,
+        )
+        self.assertEqual(1, transport.discovery_calls)
+
+    def test_discovery_partial_failure_keeps_audited_units_clean(self):
+        # Two units: the first completes its window, the second fails
+        # transport.  Only the second lands in the unaudited set; the
+        # loop keeps processing window by window either way.
+        from lima import agent_orchestrator
+
+        class _TwoUnitWorkspace:
+            def read_text(self, relative_path):
+                return UAF_SOURCE
+
+        sends = []
+
+        def fake_send(resolved, system, user, timeout, budget):
+            sends.append(user)
+            if len(sends) == 1:
+                return discovery_json([])
+            raise LLMTransportError("gateway down")
+
+        with patch.object(
+            agent_orchestrator, "send_semantic_request", fake_send,
+        ):
+            leads, notes, unreviewed = agent_orchestrator._discover_leads(
+                {"model": "probe"}, _TwoUnitWorkspace(),
+                (UNIT, "src/b.cpp"), 60, None,
+                CxxAgentBudget(max_calls=8, max_output_bytes=1_048_576),
+                "required",
+            )
+        self.assertEqual((), leads)
+        self.assertEqual(2, len(sends))
+        self.assertEqual(frozenset({"src/b.cpp"}), unreviewed)
+        self.assertTrue(any(
+            "llm-discovery-window-transport-failed" in note
+            for note in notes
+        ))
+
+    def test_discovery_same_unit_partial_transport_failure_is_unreviewed(self):
+        # Round 2 review, the reviewer's own probe: one unit, two
+        # windows; the first returns a valid empty reply, the second
+        # fails transport.  The completed window keeps its leads and the
+        # loop keeps going, but the unit's coverage is partial, so it
+        # must surface as unaudited -- never as a clean no-findings.
+        from lima import agent_orchestrator
+
+        big_source = "\n".join(
+            f"int filler_{index}(void) {{ return {index}; }}"
+            for index in range(4000)
+        )
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return big_source
+
+        sends = []
+
+        def fake_send(resolved, system, user, timeout, budget):
+            sends.append(user)
+            if len(sends) == 1:
+                return discovery_json([])
+            raise LLMTransportError("gateway down")
+
+        with patch.object(
+            agent_orchestrator, "send_semantic_request", fake_send,
+        ):
+            leads, notes, unreviewed = agent_orchestrator._discover_leads(
+                {"model": "probe"}, _FlatWorkspace(), ("big.c",),
+                60, None, CxxAgentBudget(
+                    max_calls=8, max_output_bytes=1_048_576,
+                ), "required",
+            )
+        self.assertEqual((), leads)
+        # One send per window: the first succeeded, every later one
+        # raised -- the unit is covered only in part.
+        window_count = len(agent_orchestrator._split_windows(big_source))
+        self.assertGreaterEqual(window_count, 2)
+        self.assertEqual(window_count, len(sends))
+        self.assertEqual(frozenset({"big.c"}), unreviewed)
+        self.assertTrue(any(
+            "llm-discovery-window-transport-failed" in note
+            for note in notes
+        ))
+
+    def test_discovery_same_unit_partial_format_failure_is_unreviewed(self):
+        # Same shape with the format failure class: the second window's
+        # reply (and its one repair) are both malformed, so the window
+        # never completes and the unit stays partially unaudited.
+        from lima import agent_orchestrator
+
+        big_source = "\n".join(
+            f"int filler_{index}(void) {{ return {index}; }}"
+            for index in range(4000)
+        )
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return big_source
+
+        sends = []
+
+        def fake_send(resolved, system, user, timeout, budget):
+            sends.append(user)
+            if len(sends) == 1:
+                return discovery_json([])
+            return "not a platform reply"
+
+        with patch.object(
+            agent_orchestrator, "send_semantic_request", fake_send,
+        ):
+            leads, notes, unreviewed = agent_orchestrator._discover_leads(
+                {"model": "probe"}, _FlatWorkspace(), ("big.c",),
+                60, None, CxxAgentBudget(
+                    max_calls=8, max_output_bytes=1_048_576,
+                ), "required",
+            )
+        # One send for the first window, then attempt plus repair (two
+        # sends) for each later window that never parses.
+        window_count = len(agent_orchestrator._split_windows(big_source))
+        self.assertGreaterEqual(window_count, 2)
+        self.assertEqual(1 + 2 * (window_count - 1), len(sends))
+        self.assertEqual(frozenset({"big.c"}), unreviewed)
+        self.assertTrue(any(
+            "llm-discovery-window-format-failed" in note
+            for note in notes
+        ))
+
+    def test_discovery_window_cap_leaves_units_partially_unreviewed(self):
+        # A unit spanning more windows than the cap keeps its audited
+        # prefix, but the windows the cap drops leave a permanent hole:
+        # the unit is unaudited-in-part even though every sent window
+        # succeeded.
+        from lima import agent_orchestrator
+
+        huge_source = "\n".join(
+            f"int filler_{index}(void) {{ return {index}; }}"
+            for index in range(13000)
+        )
+
+        class _FlatWorkspace:
+            def read_text(self, relative_path):
+                return huge_source
+
+        sends = []
+
+        def fake_send(resolved, system, user, timeout, budget):
+            sends.append(user)
+            return discovery_json([])
+
+        with patch.object(
+            agent_orchestrator, "send_semantic_request", fake_send,
+        ):
+            leads, notes, unreviewed = agent_orchestrator._discover_leads(
+                {"model": "probe"}, _FlatWorkspace(), ("huge.c",),
+                60, None, CxxAgentBudget(
+                    max_calls=16, max_output_bytes=4_194_304,
+                ), "required",
+            )
+        self.assertEqual(agent_orchestrator._MAX_DISCOVERY_WINDOWS,
+                         len(sends))
+        self.assertTrue(any(
+            note.startswith("llm-discovery-windows-capped") for note in notes
+        ), notes)
+        self.assertEqual(frozenset({"huge.c"}), unreviewed)
+
+    def test_mode_off_never_uses_discovery(self):
+        outcome = _run(
+            mode="off",
+            llm_transport=GuardTransport(),
+            analyzer=None,
+            leads=(),
+        )
+        self.assertEqual((), outcome.targets)
+        self.assertEqual(("mode-off",), outcome.diagnostics)
+
+    def test_discovery_reply_repair_recovers_a_bad_path(self):
+        transport = ScriptedPlatformTransport(
+            specialist=[hypothesis_json()],
+            critic=[critic_json()],
+            discovery=[
+                # First reply points outside the audited units: contract
+                # failure, repaired once.
+                discovery_json([{
+                    "path": "src/other.c", "line": 1, "summary": "outside",
+                }]),
+                discovery_json([{
+                    "path": UNIT, "line": 30, "summary": "repaired",
+                }]),
+            ],
+        )
+        outcome = _run(
+            llm_transport=transport,
+            analyzer=None,
+            leads=(),
+            workbench=FakeWorkbench([uaf_hit()]),
+        )
+        self.assertEqual("runtime-confirmed", outcome.targets[0].state)
+        self.assertEqual(2, transport.discovery_calls)
+
+    def test_split_windows_respect_line_boundaries(self):
+        from lima.agent_orchestrator import (
+            _DISCOVERY_WINDOW_BYTES,
+            _split_windows,
+        )
+
+        single = "int f(void) { return 0; }\n" * 5
+        self.assertEqual(((single, 1),), _split_windows(single))
+        line = "x" * 60 + "\n"  # 61 bytes per line
+        big = line * 2000
+        windows = _split_windows(big)
+        # 49152 // 61 = 805 lines per window boundary.
+        self.assertEqual([1, 806, 1611], [start for _, start in windows])
+        for text, _start in windows:
+            self.assertLessEqual(len(text.encode("utf-8")), _DISCOVERY_WINDOW_BYTES)
+        self.assertEqual(big, "\n".join(text for text, _ in windows))
+
+    def test_driver_contract_uses_the_snapshot_compdb(self):
+        from lima.agent_orchestrator import (
+            _driver_contract,
+            _semantic_flags_from_compdb,
+            build_hypothesis_context,
+        )
+
+        unit = "src/a.c"
+        root = tempfile.mkdtemp(suffix="-driver-contract")
+        try:
+            workspace = _write_cxx_repo(root, name=unit)
+            (Path(root) / "compile_commands.json").write_text(
+                json.dumps([{
+                    "directory": ".",
+                    "file": unit,
+                    "arguments": [
+                        "clang-14", "-c", "-I_overlay", "-Ilib", "-DXML_STATIC",
+                        unit, "-o", "build/o.o",
+                    ],
+                }]),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                ("-I_overlay", "-Ilib", "-DXML_STATIC"),
+                _semantic_flags_from_compdb(workspace, unit),
+            )
+            contract = _driver_contract(workspace, unit)
+            self.assertIn(
+                "clang++-14 -fsanitize=address -g -O1 "
+                "-I_overlay -Ilib -DXML_STATIC -x c " + unit,
+                contract,
+            )
+            self.assertIn("never #include the target unit itself", contract)
+            self.assertIn("sibling .c files", contract)
+            context = build_hypothesis_context(
+                target_id="t", path=unit, line=5, fact_lines=(),
+                snippet="(code)", driver_contract=contract,
+            )
+            self.assertIn("Driver contract", context)
+        finally:
+            _rmtree(root)
+
+    def test_driver_contract_without_compdb_falls_back(self):
+        from lima.agent_orchestrator import _driver_contract
+
+        unit = "src/a.c"
+        root = tempfile.mkdtemp(suffix="-driver-contract-empty")
+        try:
+            workspace = _write_cxx_repo(root, name=unit)
+            contract = _driver_contract(workspace, unit)
+            self.assertIn("(no extra flags)", contract)
+            self.assertIn("-x c " + unit, contract)
+        finally:
+            _rmtree(root)
+
+    def test_driver_contract_allows_embedded_link_stubs(self):
+        # Frozen after the bluetooth/dsoftbus stub-link battles: when the
+        # one compile command hits undefined references, the driver author
+        # may embed no-op stubs -- but never on the audited path.
+        from lima.agent_orchestrator import _driver_contract
+
+        unit = "src/a.c"
+        root = tempfile.mkdtemp(suffix="-driver-contract-stubs")
+        try:
+            workspace = _write_cxx_repo(root, name=unit)
+            contract = _driver_contract(workspace, unit)
+            self.assertIn("no-op stubs for exactly those symbols", contract)
+            self.assertIn(
+                "never stub a symbol the hypothesized fault path", contract
+            )
+        finally:
+            _rmtree(root)
+
+    def test_playbook_teaches_link_closure_and_stub_limits(self):
+        from lima.agent_orchestrator import _SPECIALIST_PLAYBOOK
+
+        self.assertIn("Link closure", _SPECIALIST_PLAYBOOK)
+        self.assertIn(
+            "no-op stubs for exactly the missing", _SPECIALIST_PLAYBOOK
+        )
+        self.assertIn("never stub a function on", _SPECIALIST_PLAYBOOK)
+        self.assertIn("shrink timing windows", _SPECIALIST_PLAYBOOK)
+
+    def test_playbook_carries_battle_tested_cwe_recipes(self):
+        # Frozen from the sprint plan V02: the generic playbook gains a
+        # CWE-keyed recipe layer distilled from the expat allocator-
+        # injection campaign and the dsoftbus/avrcp timing-hammer battles.
+        # Only CWEs with battle evidence carry recipes; every other CWE
+        # stays on the generic playbook.
+        from lima.agent_orchestrator import (
+            _SPECIALIST_CWE_RECIPES,
+            _specialist_recipe_appendix,
+            _system_platform_specialist,
+        )
+        from lima.vuln_packs import registry_cwe_display_order
+
+        self.assertEqual(set(_SPECIALIST_CWE_RECIPES), {"CWE-416", "CWE-476"})
+        self.assertTrue(
+            set(_SPECIALIST_CWE_RECIPES).issubset(
+                set(registry_cwe_display_order())
+            )
+        )
+
+        appendix = _specialist_recipe_appendix()
+        system = _system_platform_specialist()
+        self.assertIn(appendix, system)
+        self.assertIn("[CWE-416]", appendix)
+        self.assertIn("[CWE-476]", appendix)
+        self.assertLess(
+            appendix.index("[CWE-416]"), appendix.index("[CWE-476]")
+        )
+        # Deterministic assembly: same call, same bytes.
+        self.assertEqual(_specialist_recipe_appendix(), appendix)
+
+        # expat lineage: counting allocator, ordinal sweep, build-gate
+        # reachability honesty, and the exact composition rule grounded
+        # in the official regression test (see
+        # tests/fixtures/expat_composition_probe/).  Review correction:
+        # a NULL context is the legal shared-DTD semantics, so the
+        # recipe must never claim an empty context calls outside the
+        # real path.
+        uaf = _SPECIALIST_CWE_RECIPES["CWE-416"]
+        self.assertIn("allocation ordinal", uaf)
+        self.assertIn("sweep N", uaf)
+        self.assertIn("build configuration", uaf)
+        self.assertIn("unreachable in that build", uaf)
+        self.assertIn("external SYSTEM subset", uaf)
+        self.assertIn("XML_PARAM_ENTITY_PARSING_ALWAYS", uaf)
+        self.assertIn("NULL context is the legal", uaf)
+        self.assertIn("never dismiss a NULL context", uaf)
+        self.assertIn("NON-NULL encoding name", uaf)
+        self.assertIn("XML_ParserReset", uaf)
+        self.assertIn("not universal necessary conditions", uaf)
+        # The wrong claim from commit 72aa004 must not come back.
+        self.assertNotIn("empty context", uaf)
+        # dsoftbus/avrcp lineage: caller-precondition replication, the
+        # second-lookup window, the two-thread hammer, noise discipline.
+        self.assertIn("verbatim", uaf)
+        self.assertIn("second lookup", uaf)
+        self.assertIn("two threads", uaf)
+        self.assertIn("mmap noise", uaf)
+
+        # CWE-476 TOCTOU window between the caller's guarded lookup and
+        # the callee's second lookup, raced by concurrent removal.
+        null = _SPECIALIST_CWE_RECIPES["CWE-476"]
+        self.assertIn("second independent lookup", null)
+        self.assertIn("concurrent removal", null)
+
+    def test_critic_enforces_ownership_strip_and_stub_validity(self):
+        # Frozen from the avrcp finding: naive null-check fixes of
+        # temporary-extracted raw pointers leave the UAF path open, and
+        # no-op stubs on the fault path invalidate the experiment.
+        from lima.agent_orchestrator import _SYSTEM_PLATFORM_CRITIC
+
+        self.assertIn("Ownership-strip rule", _SYSTEM_PLATFORM_CRITIC)
+        self.assertIn(
+            "null-check-only fix as insufficient", _SYSTEM_PLATFORM_CRITIC
+        )
+        self.assertIn(
+            "holding the owning smart pointer", _SYSTEM_PLATFORM_CRITIC
+        )
+        self.assertIn("compress the timing", _SYSTEM_PLATFORM_CRITIC)
+
+    def test_specialist_schema_states_field_bounds_upfront(self):
+        # Frozen from the l2cap battle: the 1000-character
+        # experiment_design bound was enforced on arrival but never
+        # stated in the prompt, so verbose stub plans died at parse and
+        # the repair round could not recover.
+        from lima.agent_orchestrator import _platform_schema
+
+        schema = _platform_schema()
+        self.assertIn("experiment_design <= 1000", schema)
+        self.assertIn("hypothesis <= 2000", schema)
+        self.assertIn("one sentence", schema)
+
+    def test_compile_failures_grant_extra_repair_rounds(self):
+        # dialogue_rounds=1 buys two experiments; two compile failures
+        # each grant one bounded repair round, so the third (hitting)
+        # driver still runs and the target reaches runtime-confirmed.
+        transport = ScriptedPlatformTransport(
+            specialist=[hypothesis_json(driver="int first() { return 0; }")],
+            critic=[
+                critic_json(
+                    assessment="revise-experiment",
+                    revised_driver="int v1() { FREE_THEN_USE; }",
+                ),
+                critic_json(
+                    assessment="revise-experiment",
+                    revised_driver="int v2() { FREE_THEN_USE; }",
+                ),
+            ],
+        )
+        outcome = _run(
+            llm_transport=transport,
+            workbench=FakeWorkbench([
+                compile_failure(), compile_failure(), uaf_hit(),
+            ]),
+        )
+        self.assertEqual("runtime-confirmed", outcome.targets[0].state)
+        self.assertEqual(3, len(outcome.targets[0].experiment_log))
+        self.assertEqual(2, transport.critic_calls)
+
+    def test_clean_runs_never_grant_extra_rounds(self):
+        # A clean run is information-poor: the dialogue budget stays put,
+        # so the second clean experiment ends the loop without a critic.
+        transport = ScriptedPlatformTransport(
+            specialist=[hypothesis_json(driver="int first() { return 0; }")],
+            critic=[critic_json(
+                assessment="revise-experiment",
+                revised_driver="int v2() { FREE_THEN_USE; }",
+            )],
+        )
+        outcome = _run(
+            llm_transport=transport,
+            workbench=FakeWorkbench([clean_run(), clean_run(), uaf_hit()]),
+        )
+        self.assertEqual(2, len(outcome.targets[0].experiment_log))
+        self.assertNotEqual("runtime-confirmed", outcome.targets[0].state)
+        self.assertEqual(1, transport.critic_calls)
+
+    def test_compile_repairs_stop_at_the_cap(self):
+        # dialogue_rounds=1 buys two experiments; four compile failures each
+        # grant one repair round, further failures grant nothing more, and
+        # the loop ends exactly at base + cap experiments.
+        transport = ScriptedPlatformTransport(
+            specialist=[hypothesis_json(driver="int first() { return 0; }")],
+            critic=[
+                critic_json(
+                    assessment="revise-experiment",
+                    revised_driver=f"int v{i}() {{ FREE_THEN_USE; }}",
+                )
+                for i in range(5)
+            ],
+        )
+        outcome = _run(
+            llm_transport=transport,
+            workbench=FakeWorkbench([
+                compile_failure() for _ in range(6)
+            ]),
+        )
+        self.assertEqual(6, len(outcome.targets[0].experiment_log))
+        self.assertNotEqual("runtime-confirmed", outcome.targets[0].state)
+        self.assertEqual(5, transport.critic_calls)
+
+    def test_parse_discovery_reply_contract(self):
+        from lima.agent_orchestrator import (
+            PlatformFormatError,
+            _parse_discovery_reply,
+            _resolve_discovery_line,
+        )
+
+        known = frozenset({UNIT})
+        good = _parse_discovery_reply(
+            json.dumps({"leads": [
+                {"path": UNIT, "line": 0, "summary": "s",
+                 "function": "dtdCopy"},
+            ]}),
+            known,
+        )
+        self.assertEqual(((UNIT, 0, "s", "dtdCopy"),), good)
+        self.assertEqual((), _parse_discovery_reply('{"leads": []}', known))
+        bad_replies = (
+            "not json",
+            "[]",
+            json.dumps({"leads": [], "extra": 1}),
+            json.dumps({"leads": [{"path": "src/other.c", "line": 5,
+                                   "summary": "s"}]}),
+            json.dumps({"leads": [{"path": UNIT, "line": -1,
+                                   "summary": "s"}]}),
+            json.dumps({"leads": [{"path": UNIT, "line": 5}]}),
+            json.dumps({"leads": [{"path": UNIT, "summary": "no location"}]}),
+            json.dumps({"leads": [
+                {"path": UNIT, "line": i + 1, "summary": "s"}
+                for i in range(9)
+            ]}),
+        )
+        for reply in bad_replies:
+            with self.subTest(reply=reply[:60]):
+                with self.assertRaises(PlatformFormatError):
+                    _parse_discovery_reply(reply, known)
+
+        # Function names resolve mechanically to the *definition* line;
+        # prototypes are skipped and hallucinated approximate lines never
+        # win over the function.
+        source = (
+            "static int poolGrow(STRING_POOL *pool);\n"
+            "\n"
+            "static int dtdCopy(XML_Parser old, DTD *n, const DTD *o) {\n"
+            "  return 1;\n"
+            "}\n"
+            "\n"
+            "static int poolGrow(STRING_POOL *pool) {\n"
+            "  return 1;\n"
+            "}\n"
+        )
+        self.assertEqual(
+            3, _resolve_discovery_line(source, "dtdCopy", 9999)
+        )
+        self.assertEqual(
+            7, _resolve_discovery_line(source, "poolGrow", 9999)
+        )
+        # Unknown function falls back to the approximate line, and to
+        # None without one.
+        self.assertEqual(
+            42, _resolve_discovery_line(source, "missing", 42)
+        )
+        self.assertIsNone(_resolve_discovery_line(source, "missing", 0))
+        self.assertIsNone(_resolve_discovery_line(source, "", 0))
 
 
 class NoProofGateTests(unittest.TestCase):
@@ -1409,6 +2386,27 @@ class ScannerSingleChainTests(unittest.TestCase):
             ),
         )
         self.assertNotIn("cxx_agent", disabled)
+
+    def test_platform_collaboration_reports_unreviewed_scope(self):
+        """Review round 5 (P1): unaudited scope surfaces in the payload."""
+        from lima.agent_orchestrator import PlatformReviewOutcome
+        from lima.agent_orchestrator import PlatformReviewStats
+
+        outcome = PlatformReviewOutcome(
+            findings=(), targets=(),
+            stats=PlatformReviewStats(0, 0, 0, 0, 0, 0, 1),
+            diagnostics=("llm-discovery-window-transport-failed: down",),
+            leads_considered=0,
+            translation_units=("src/example.c",),
+            unreviewed_units=("src/example.c",),
+        )
+        scanner = RepositoryScanner(sast_mode="off", dataflow_enabled=False)
+        payload = scanner._platform_collaboration(
+            "required", "review-incomplete", outcome,
+            unreviewed_units=("src/example.c",),
+        )
+        self.assertEqual("review-incomplete", payload["status"])
+        self.assertEqual(["src/example.c"], payload["unreviewed_units"])
 
     # --- #244（方案 §3.4）：目标审计详情投影 -------------------------------
 

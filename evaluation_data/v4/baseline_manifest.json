@@ -3,7 +3,7 @@
   "datasets": [
     {
       "name": "lima-popular-python-calibration-v1",
-      "fingerprint": "049d69b25731e51f75a800c5c406ab2d8faef1257d7dacfb275f9734b407b986",
+      "fingerprint": "9f442c3ffad7d5115a6098f125a9ed5dcc4616aeda3da444b3f4b2d10dfff6e7",
       "role": "calibration",
       "source": "evaluation_data/popular_calibration_v1.json",
       "license": "Upstream materials (source code, diffs, commit messages, advisory text) retain their original copyrights and licenses; LIMA's annotations, selection logic, oracles, schemas, and tooling are Apache-2.0 (evaluation_data/README.md, Provenance requirements).",

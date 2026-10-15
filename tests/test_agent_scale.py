@@ -439,5 +439,161 @@ class OrchestratorCacheRoundtripTests(unittest.TestCase):
         self.assertEqual({"hits": 1, "misses": 0}, second_cache.stats())
 
 
+class OrchestratorCachePromptInvalidationTests(unittest.TestCase):
+    """Prompt changes must invalidate the per-target outcome cache.
+
+    Review finding on PR #301: the CWE recipe layer changed the
+    Specialist system prompt, but the target cache key carried no prompt
+    fingerprint, so a cache filled under the old prompt kept hitting and
+    the new recipes never executed (zero Specialist/Critic calls, stale
+    Finding replayed). The key therefore folds the SHA-256 of the
+    actually generated Specialist and Critic system prompts, so recipe,
+    prompt or registry-addenda changes auto-invalidate.
+    """
+
+    def _fingerprints(self):
+        from lima.agent_orchestrator import _target_cache_fingerprints
+        from lima.agent_scout import ScoutTarget
+
+        target = ScoutTarget(
+            lead_id=harness.LEAD.lead_id,
+            path=harness.LEAD.path,
+            line=harness.LEAD.line,
+            reason="release of p precedes the use",
+            confidence="high",
+        )
+        return _target_cache_fingerprints(
+            target,
+            repository_key=harness.REPO_KEY,
+            snapshot_hash=harness.SNAPSHOT,
+            mode="auto",
+            source_mode="repository",
+            dialogue_rounds=1,
+        )
+
+    def test_fingerprints_carry_prompt_digests(self):
+        fps = self._fingerprints()
+        specialist = [
+            f for f in fps if f.startswith("specialist-prompt-sha256=")
+        ]
+        critic = [f for f in fps if f.startswith("critic-prompt-sha256=")]
+        self.assertEqual(1, len(specialist), fps)
+        self.assertEqual(1, len(critic), fps)
+        self.assertEqual(64, len(specialist[0].split("=", 1)[1]))
+        self.assertEqual(64, len(critic[0].split("=", 1)[1]))
+
+    def test_same_prompt_same_key_recipe_change_new_key(self):
+        # AC-1 (same prompt -> stable key) and AC-3 (recipe content
+        # change -> changed key) at the fingerprint level.
+        import lima.agent_orchestrator as orchestrator
+
+        before = self._fingerprints()
+        self.assertEqual(before, self._fingerprints())
+
+        mutated = dict(orchestrator._SPECIALIST_CWE_RECIPES)
+        mutated["CWE-476"] = mutated["CWE-476"] + " One more sentence."
+        with patch.object(
+            orchestrator, "_SPECIALIST_CWE_RECIPES", mutated
+        ):
+            after = self._fingerprints()
+        self.assertNotEqual(before, after)
+
+    def test_old_prompt_cache_misses_and_calls_specialist(self):
+        # AC-2 end-to-end: a cache filled under a different prompt must
+        # miss and actually run the Specialist again. The first pass
+        # fills the cache under a mutated (stand-in "old") recipe dict;
+        # the second pass runs with the real recipes and must not replay.
+        import lima.agent_orchestrator as orchestrator
+
+        root = tempfile.mkdtemp(suffix="-agent-scale-prompt-cache")
+        cache_dir = Path(root) / "scale-cache"
+        workspace = harness._write_cxx_repo(root)
+        transport = harness.ScriptedPlatformTransport(
+            specialist=[
+                harness.hypothesis_json(driver="int first() { return 0; }"),
+                harness.hypothesis_json(driver="int second() { return 0; }"),
+            ],
+            critic=[harness.critic_json(
+                assessment="revise-experiment",
+                revised_driver="int revised() { FREE_THEN_USE; }",
+            )] * 2,
+        )
+        mutated = dict(orchestrator._SPECIALIST_CWE_RECIPES)
+        mutated["CWE-416"] = mutated["CWE-416"] + " Old-prompt variant."
+        try:
+            with (
+                patch(
+                    "lima.agent_scout.post_chat_completion_text",
+                    harness.scout_target_transport([]),
+                ),
+                patch(
+                    "lima.uaf_llm_branch.post_chat_completion_text",
+                    transport,
+                ),
+                patch.object(
+                    orchestrator, "_SPECIALIST_CWE_RECIPES", mutated
+                ),
+            ):
+                run_platform_review(
+                    harness.FakeUafAnalyzer(),
+                    workspace,
+                    repository_key=harness.REPO_KEY,
+                    snapshot_hash=harness.SNAPSHOT,
+                    translation_units=(harness.UNIT,),
+                    mode="auto",
+                    budget=CxxAgentBudget(
+                        max_calls=64, max_output_bytes=1_048_576,
+                    ),
+                    llm_config=dict(harness.RESOLVED_LLM),
+                    repro_workbench=harness.FakeWorkbench(
+                        [harness.clean_run(), harness.uaf_hit()],
+                    ),
+                    leads=(harness.LEAD,),
+                    dialogue_rounds=1,
+                    source_mode="repository",
+                    cache=ResultCache(cache_dir, "platform-review-v1"),
+                )
+
+            second_cache = ResultCache(cache_dir, "platform-review-v1")
+            with (
+                patch(
+                    "lima.agent_scout.post_chat_completion_text",
+                    harness.scout_target_transport([]),
+                ),
+                patch(
+                    "lima.uaf_llm_branch.post_chat_completion_text",
+                    transport,
+                ),
+            ):
+                second = run_platform_review(
+                    harness.FakeUafAnalyzer(),
+                    workspace,
+                    repository_key=harness.REPO_KEY,
+                    snapshot_hash=harness.SNAPSHOT,
+                    translation_units=(harness.UNIT,),
+                    mode="auto",
+                    budget=CxxAgentBudget(
+                        max_calls=64, max_output_bytes=1_048_576,
+                    ),
+                    llm_config=dict(harness.RESOLVED_LLM),
+                    repro_workbench=harness.FakeWorkbench(
+                        [harness.clean_run(), harness.uaf_hit()],
+                    ),
+                    leads=(harness.LEAD,),
+                    dialogue_rounds=1,
+                    source_mode="repository",
+                    cache=second_cache,
+                )
+        finally:
+            harness._rmtree(root)
+        self.assertEqual(1, len(second.targets))
+        self.assertEqual(
+            1, second.stats.specialist_calls,
+            "a cache written under a different prompt must not replay",
+        )
+        self.assertEqual(1, second.stats.critic_calls)
+        self.assertEqual({"hits": 0, "misses": 1}, second_cache.stats())
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

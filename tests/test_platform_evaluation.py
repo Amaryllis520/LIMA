@@ -1041,6 +1041,33 @@ class ProviderAndCliTests(unittest.TestCase):
         self.assertEqual("deepseek", provider)
         self.assertEqual("env-model", model)
 
+    def test_real_mode_passes_request_params_and_fails_closed(self):
+        module = self.module
+        base_env = {
+            "LIMA_LLM_BASE_URL": "https://llm.example.invalid/v1",
+            "LIMA_CXX_AGENT_MODEL": "glm-test",
+        }
+        args = module.build_parser().parse_args(
+            ["--cases", str(CASES_PATH), "--output", "out.json"]
+        )
+        env = dict(base_env)
+        env["LIMA_CXX_AGENT_REQUEST_PARAMS_JSON"] = (
+            '{"thinking": {"type": "disabled"}}'
+        )
+        llm_config, _, _ = module.build_llm_config(args, env=env)
+        self.assertEqual(
+            {"thinking": {"type": "disabled"}},
+            llm_config["request_params"],
+        )
+        for malformed in ('{"thinking": ', "[]"):
+            env = dict(base_env)
+            env["LIMA_CXX_AGENT_REQUEST_PARAMS_JSON"] = malformed
+            with self.assertRaises(module.ProviderNotConfigured):
+                module.build_llm_config(args, env=env)
+        env = dict(base_env)  # absent or blank: no key, no complaint
+        llm_config, _, _ = module.build_llm_config(args, env=env)
+        self.assertNotIn("request_params", llm_config)
+
     def test_main_fake_run_writes_a_complete_report(self):
         module = self.module
         with tempfile.TemporaryDirectory() as tmp:
