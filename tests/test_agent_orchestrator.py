@@ -1197,7 +1197,8 @@ class DiscoveryFallbackTests(unittest.TestCase):
     def test_per_window_lead_allowance_is_battle_tuned(self):
         # Round 2 of the arms race (battles r5-r13): glm-5.3 reports
         # 15-21 leads across the ~6 windows of xmlparse.c -- the r13
-        # round kept 18 at 3/window and still capped at 19+, which kept
+        # round kept 18 under the previous 3/window allowance and still
+        # capped at 19+, which kept
         # failing the required-review gate on the FIXED side, so the
         # 3+3 replay never ran and the case stayed inconclusive despite
         # four runtime-confirmed findings.  4/window (24 at 6 windows)
