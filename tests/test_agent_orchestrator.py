@@ -1875,6 +1875,21 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertIn("NON-NULL encoding name", uaf)
         self.assertIn("XML_ParserReset", uaf)
         self.assertIn("not universal necessary conditions", uaf)
+        # Battle r11: the link-closure wall -- the platform links only
+        # the target TU, so expat needs its sibling units by bare name
+        # (the compile database's -Iexpat/lib resolves them); the model
+        # tried repo-relative and build-relative paths and failed both.
+        # Review P2: those flags are r11-snapshot facts -- the recipe
+        # must scope them to that snapshot and tell the model to check
+        # the target snapshot's own compile parameters first.
+        self.assertIn("r11 expat snapshot", uaf)
+        self.assertIn("#include \"xmltok.c\"", uaf)
+        self.assertIn("#include \"xmlrole.c\"", uaf)
+        self.assertIn("do not assume the r11 flags", uaf)
+        self.assertIn(
+            "read the target snapshot's actual compile parameters", uaf,
+        )
+        self.assertIn("XMLCALL", uaf)
         # The wrong claim from commit 72aa004 must not come back.
         self.assertNotIn("empty context", uaf)
         # dsoftbus/avrcp lineage: caller-precondition replication, the
