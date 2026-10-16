@@ -1243,8 +1243,8 @@ def _report_markdown(
                     (
                         code for code in result.reason_codes
                         if code.startswith((
-                            "fixed-", "vulnerable-", "replay-",
-                            "provider-",
+                            "fixed-", "vulnerable-", "required-",
+                            "replay-", "provider-",
                         ))
                     ),
                     next(
@@ -1266,6 +1266,9 @@ def _report_markdown(
         return replace(
             context,
             cve_ids=(case.cve_id,) if paired else (),
+            cve_attribution_verified=(
+                result.status == ValidationStatus.PASSED
+            ) if paired else context.cve_attribution_verified,
             patch_suggestion=case.remediation if paired else "",
             remediation_regression=regression,
             **_impact_context(finding, git_root),

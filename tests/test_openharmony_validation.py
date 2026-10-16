@@ -1355,12 +1355,52 @@ class BundleWriterTests(unittest.TestCase):
         self.assertIn("双版本验证未通过（案例判定：failed", paired)
         self.assertIn("直接原因：fixed-matching-finding", paired)
         self.assertIn("不构成已验证归因", paired)
+        # Whole-report wording: no affirmative CVE-match phrasing may
+        # survive anywhere in the failed-state paired dossier.
+        self.assertNotIn("已匹配已知公开 CVE", paired)
+        self.assertIn("**CVE 匹配**: " + self.case.cve_id, paired)
+        self.assertIn("已知案例关联，归因未验证", paired)
+        self.assertIn("关联已知公开 CVE", paired)
+        self.assertNotIn("披露前请核对", paired)
         # The passing case keeps the affirmative attribution (no gate
         # text leaks into the clean baseline).
         baseline = self.module._report_markdown(
             self.result, "a" * 64,
         ).split("# 漏洞研究报告")[1:]
         self.assertNotIn("不构成已验证归因", baseline[0])
+        self.assertIn("已匹配已知公开 CVE", baseline[0])
+
+    def test_unreviewed_fixed_side_is_the_named_cause_not_the_note(self):
+        # Review P2 round 2: when the FIXED side is inconclusive because
+        # its required review went unfinished, the gate's direct cause
+        # must name that review gap -- the informational
+        # multiple-matching-findings note must not mask it.
+        from dataclasses import replace
+
+        outcome = self.result.vulnerable.platform_outcome
+        first = outcome.findings[0]
+        second = replace(first, target_id="second-target", line=first.line + 1)
+        result = replace(
+            self.result,
+            vulnerable=replace(self.result.vulnerable,
+                               platform_outcome=replace(outcome, findings=(first, second))),
+            status=self.module.ValidationStatus.INCONCLUSIVE,
+            reason_codes=(
+                "multiple-matching-findings: 2 runtime-confirmed "
+                "matches; the 3+3 replay uses the first",
+                "required-review-unreviewed-units: expat/lib/xmlparse.c",
+            ),
+        )
+        paired = self.module._report_markdown(
+            result, "a" * 64,
+        ).split("# 漏洞研究报告")[1:][0]
+        self.assertIn("案例判定：inconclusive", paired)
+        self.assertIn(
+            "直接原因：required-review-unreviewed-units: "
+            "expat/lib/xmlparse.c",
+            paired,
+        )
+        self.assertNotIn("直接原因：multiple-matching", paired)
 
     def test_report_does_not_pass_clean_replay_with_inconclusive_status(self):
         from dataclasses import replace

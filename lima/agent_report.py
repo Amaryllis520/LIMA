@@ -295,6 +295,12 @@ class DossierContext:
     # ran clean on the fixed revision, the precise failure mode otherwise.
     # Empty keeps the pre-wiring placeholder (no replay evidence at all).
     remediation_regression: str = ""
+    # Whether the CVE association above is backed by a PASSED
+    # dual-version validation.  False downgrades every CVE-match
+    # wording to a known-case association with an unverified
+    # attribution (review P2 on the paired-case report); defaults to
+    # True so non-case callers keep the historical behavior.
+    cve_attribution_verified: bool = True
 
 
 _REPORT_TITLE: Final = "# 漏洞研究报告 (Vulnerability Research Dossier)"
@@ -515,6 +521,11 @@ def _section_impact(finding: PlatformFinding, context: DossierContext) -> str:
         if context.cve_ids
         else _NO_CVE_TEXT + "——离线索引三键（组件/路径/提交窗）无匹配，不臆测"
     )
+    if context.cve_ids and not context.cve_attribution_verified:
+        # Known-case association only: the dual-version validation did
+        # not pass, so the CVE match must not read as a verified
+        # attribution anywhere in the dossier (review P2).
+        cves += "（已知案例关联，归因未验证——双版本验证未通过）"
     lines = [
         f"- **影响模块**: `{module}`（由缺陷路径推断）",
         f"- **影响版本**: {versions}"
@@ -548,12 +559,19 @@ def _section_impact(finding: PlatformFinding, context: DossierContext) -> str:
 
 def _section_remediation(context: DossierContext) -> str:
     suggestion = context.patch_suggestion or _PATCH_PLACEHOLDER
-    disclosure = (
-        f"已匹配已知公开 CVE（{'、'.join(context.cve_ids)}）；"
-        "披露前请核对受影响范围与官方通告。"
-        if context.cve_ids
-        else _DISCLOSURE_NEW
-    )
+    if context.cve_ids and not context.cve_attribution_verified:
+        disclosure = (
+            f"关联已知公开 CVE（{'、'.join(context.cve_ids)}），"
+            "归因未验证——双版本验证未通过；披露前必须先完成"
+            "双版本验证并核对官方通告。"
+        )
+    else:
+        disclosure = (
+            f"已匹配已知公开 CVE（{'、'.join(context.cve_ids)}）；"
+            "披露前请核对受影响范围与官方通告。"
+            if context.cve_ids
+            else _DISCLOSURE_NEW
+        )
     lines = [
         "## 6. 修复建议与披露 (Remediation & Disclosure)",
         "",
