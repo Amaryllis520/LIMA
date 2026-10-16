@@ -2060,6 +2060,31 @@ class DiscoveryFallbackTests(unittest.TestCase):
                 # No compiler-stderr excerpt for environment failures.
                 self.assertNotIn("error:", entry["diagnostic"])
 
+    def test_compiler_stderr_containing_marker_text_still_compiles_fails(self):
+        # Review P2, round 2: substring matching misread a REAL compile
+        # error whose text happens to contain a marker ("error:
+        # 'sandbox-unavailable' was not declared") as an environment
+        # failure, dropping the compiler feedback and the repair round.
+        # Markers are matched as standalone diagnostic entries only.
+        from lima import agent_orchestrator as orchestration
+
+        observed = observation_from(repro_response(
+            stage="compile", asan_report=None,
+            diagnostics=(
+                "driver.cpp:30:5: error: use of undeclared identifier "
+                "'sandbox-unavailable'",
+            ),
+        ))
+        self.assertFalse(
+            orchestration._compile_environment_markers(observed),
+        )
+        entry = orchestration._experiment_entry(
+            0, "int main(){}", observed, False,
+        )
+        self.assertEqual("compile-failed", entry["error_type"])
+        self.assertIn("undeclared identifier", entry["diagnostic"])
+        self.assertIn("sandbox-unavailable", entry["diagnostic"])
+
     def test_environment_failed_compiles_grant_no_repair_rounds(self):
         # The repair-round grant exists because compile errors are
         # precise mechanical feedback; a sandbox outage is not, so it

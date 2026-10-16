@@ -1562,6 +1562,26 @@ def _paths_bind(candidate: Any, anchor: Any) -> bool:
     return left == right or left.endswith("/" + right) or right.endswith("/" + left)
 
 
+def _compile_environment_markers(observation: Any) -> list[str]:
+    """The environment markers the sidecar emitted as standalone entries.
+
+    The sidecar appends markers (sandbox-unavailable, repro-step-timed-out,
+    ...) as their OWN diagnostic entries; the host escapes each entry with
+    ascii(), so a marker entry equals ``ascii(marker)`` exactly.  Compiler
+    stderr merely CONTAINING a marker's text is a different, longer entry
+    and must not match -- a real ``error: 'sandbox-unavailable' was not
+    declared`` is compile feedback, not an outage (review P2, round 2).
+    """
+
+    if observation.stage != "compile":
+        return []
+    return [
+        marker
+        for marker in _COMPILE_ENVIRONMENT_MARKERS
+        if ascii(marker) in observation.diagnostics
+    ]
+
+
 def _compile_environment_failure(observation: Any) -> bool:
     """Whether a compile-stage observation failed for environment reasons.
 
@@ -1570,14 +1590,7 @@ def _compile_environment_failure(observation: Any) -> bool:
     critic from being handed contradictory advice.
     """
 
-    if observation.stage != "compile":
-        return False
-    # Diagnostics are repr-escaped (ascii()), so match by substring.
-    return any(
-        marker in diagnostic
-        for diagnostic in observation.diagnostics
-        for marker in _COMPILE_ENVIRONMENT_MARKERS
-    )
+    return bool(_compile_environment_markers(observation))
 
 
 def _experiment_entry(
@@ -1585,21 +1598,13 @@ def _experiment_entry(
 ) -> dict:
     error_type = observation.error_type
     diagnostic: str | None = None
-    if _compile_environment_failure(observation):
+    markers = _compile_environment_markers(observation)
+    if markers:
         if error_type is None:
             error_type = _COMPILE_ENVIRONMENT_ERROR_TYPE
-        markers = [
-            marker
-            for marker in _COMPILE_ENVIRONMENT_MARKERS
-            if any(
-                marker in diagnostic
-                for diagnostic in observation.diagnostics
-            )
-        ]
-        if markers:
-            # Environment markers only -- never a compiler stderr
-            # excerpt the critic could misread as driver feedback.
-            diagnostic = "; ".join(markers)
+        # Environment markers only -- never a compiler stderr excerpt
+        # the critic could misread as driver feedback.
+        diagnostic = "; ".join(markers)
     elif observation.stage == "compile":
         if error_type is None:
             error_type = "compile-failed"
