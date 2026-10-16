@@ -1228,11 +1228,46 @@ def _report_markdown(
 
     def context_for_finding(finding):
         paired = finding is final
+        regression = ""
+        if paired:
+            regression = _regression_verdict(result)
+            if result.status != ValidationStatus.PASSED:
+                # Review P2 on the multi-match contract: the selected
+                # finding keeps its factual association with the known
+                # case, but an affirmative "CVE match" must not read as
+                # a dual-version-verified attribution while the case
+                # verdict is failed or inconclusive (r15: the broad-
+                # sweep PoC also crashed the fixed build and the case
+                # correctly failed).
+                reason = next(
+                    (
+                        code for code in result.reason_codes
+                        if code.startswith((
+                            "fixed-", "vulnerable-", "replay-",
+                            "provider-",
+                        ))
+                    ),
+                    next(
+                        (
+                            code for code in result.reason_codes
+                            if code.startswith("multiple-")
+                        ),
+                        result.status.value,
+                    ),
+                )
+                regression = (
+                    f"{regression}；" if regression else ""
+                ) + (
+                    f"双版本验证未通过（案例判定：{result.status.value}；"
+                    f"直接原因：{reason}）——CVE 编号仅为已知案例关联，"
+                    "不构成已验证归因；修复建议为该已知案例的上游修复"
+                    "内容，未经本平台双版本验证背书"
+                )
         return replace(
             context,
             cve_ids=(case.cve_id,) if paired else (),
             patch_suggestion=case.remediation if paired else "",
-            remediation_regression=_regression_verdict(result) if paired else "",
+            remediation_regression=regression,
             **_impact_context(finding, git_root),
         )
 

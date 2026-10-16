@@ -1321,6 +1321,47 @@ class BundleWriterTests(unittest.TestCase):
         self.assertIn("**PoC 回归验证**", dossiers[0])
         self.assertNotIn("**PoC 回归验证**", dossiers[1])
 
+    def test_failed_case_keeps_association_without_verified_attribution(
+        self,
+    ):
+        # Review P2 on the multi-match contract (the r15 shape): the
+        # case FAILED -- fixed-matching-finding, the broad-sweep PoC
+        # also crashed the fixed build -- and the selected finding's
+        # dossier must distinguish the factual known-case association
+        # from a dual-version-verified attribution instead of reading
+        # as an affirmative CVE match.
+        from dataclasses import replace
+
+        outcome = self.result.vulnerable.platform_outcome
+        first = outcome.findings[0]
+        second = replace(first, target_id="second-target", line=first.line + 1)
+        result = replace(
+            self.result,
+            vulnerable=replace(self.result.vulnerable,
+                               platform_outcome=replace(outcome, findings=(first, second))),
+            status=self.module.ValidationStatus.FAILED,
+            reason_codes=(
+                "multiple-matching-findings: 2 runtime-confirmed "
+                "matches; the 3+3 replay uses the first",
+                "fixed-matching-finding",
+            ),
+        )
+        dossiers = self.module._report_markdown(
+            result, "a" * 64,
+        ).split("# 漏洞研究报告")[1:]
+        self.assertEqual(2, len(dossiers))
+        paired = dossiers[0]
+        self.assertIn(self.case.cve_id, paired)
+        self.assertIn("双版本验证未通过（案例判定：failed", paired)
+        self.assertIn("直接原因：fixed-matching-finding", paired)
+        self.assertIn("不构成已验证归因", paired)
+        # The passing case keeps the affirmative attribution (no gate
+        # text leaks into the clean baseline).
+        baseline = self.module._report_markdown(
+            self.result, "a" * 64,
+        ).split("# 漏洞研究报告")[1:]
+        self.assertNotIn("不构成已验证归因", baseline[0])
+
     def test_report_does_not_pass_clean_replay_with_inconclusive_status(self):
         from dataclasses import replace
 
