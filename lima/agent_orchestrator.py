@@ -437,8 +437,13 @@ _MAX_DISCOVERY_WINDOWS: Final = 8
 # truncated it nearly every round and the P2 honesty rule then poisoned
 # the unit as unreviewed.  Scaling the quota with the audited surface
 # keeps a naturally dense large unit intact; a reply density above the
-# quota still caps and still poisons coverage.
-_MAX_DISCOVERY_LEADS_PER_WINDOW: Final = 3
+# quota still caps and still poisons coverage.  Round 2 (r5-r13): the
+# observed lead maximum reached 21, so 3/window (18 at 6 windows) still
+# capped r13 on the fixed side and the 3+3 replay never ran; 4/window
+# (24 at 6 windows) covers the observed maximum while the reply schema
+# ceiling (8/window) bounds the worst case and the call budget bounds
+# the scout review cost.
+_MAX_DISCOVERY_LEADS_PER_WINDOW: Final = 4
 # Historic Scout review capacity floor; _scout_review_rounds grows the
 # wire rounds beyond it only when the discovery quota kept more leads
 # than batch*rounds can review.
