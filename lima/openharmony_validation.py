@@ -817,14 +817,20 @@ def run_openharmony_case(
         (fixed_record, _, _) = _run_revision(case.fixed, fixed_workspace)
         return _finish(vulnerable_record, fixed_record)
     if len(matching) > 1:
+        # Battles r13/r14: the recipe-driven loop lands several
+        # runtime-confirmed findings on the same case path in one round
+        # (four in each).  Abundance is not ambiguity: every match is
+        # already runtime-confirmed on the case's target path and CWE,
+        # so the replay uses the first (deterministic review order) and
+        # a diagnostic discloses the selection instead of failing the
+        # case as inconclusive.
         vulnerable_record = replace(
             vulnerable_record,
-            status=ValidationStatus.INCONCLUSIVE,
             diagnostics=(*vulnerable_record.diagnostics,
-                         "ambiguous-matching-finding"),
+                         f"multiple-matching-findings: {len(matching)} "
+                         "runtime-confirmed matches; the 3+3 replay "
+                         "uses the first"),
         )
-        (fixed_record, _, _) = _run_revision(case.fixed, fixed_workspace)
-        return _finish(vulnerable_record, fixed_record)
 
     final = matching[0]
     driver = final.poc_driver_code
@@ -1108,8 +1114,10 @@ def _final_finding(
         and finding.cwe == result.case.cwe
         and finding.path in result.case.target_paths
     ]
-    if len(matching) != 1 or not matching[0].poc_driver_code:
+    if not matching or not matching[0].poc_driver_code:
         return None
+    # Multiple runtime-confirmed matches replay the first (review
+    # order); the verdict layer discloses the selection.
     return matching[0]
 
 
