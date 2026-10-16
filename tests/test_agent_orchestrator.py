@@ -1986,6 +1986,175 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertNotEqual("runtime-confirmed", outcome.targets[0].state)
         self.assertEqual(5, transport.critic_calls)
 
+    def test_experiment_entry_classifies_compile_failures(self):
+        # Battle r10 evidence: eight compile-stage rounds all recorded
+        # error_type=null and the compiler stderr never reached the
+        # critic, so the mechanical repair loop iterated blind (the
+        # driver was one signature token away from triggering).
+        from lima import agent_orchestrator as orchestration
+
+        clang_error = (
+            "driver.cpp:17:12: error: void function 'inject_realloc' "
+            "should not return a value"
+        )
+        observed = observation_from(repro_response(
+            stage="compile", asan_report=None,
+            diagnostics=(clang_error,),
+        ))
+        entry = orchestration._experiment_entry(
+            0, "int main(){}", observed, False,
+        )
+        self.assertEqual("compile-failed", entry["error_type"])
+        self.assertIn("inject_realloc", entry["diagnostic"])
+
+        flooded = observation_from(repro_response(
+            stage="compile", asan_report=None,
+            diagnostics=("x" * 5000,),
+        ))
+        entry = orchestration._experiment_entry(
+            0, "int main(){}", flooded, False,
+        )
+        self.assertLessEqual(
+            len(entry["diagnostic"]),
+            orchestration._MAX_COMPILE_FEEDBACK_CHARS,
+        )
+
+        # Non-compile observations keep their shape untouched.
+        entry = orchestration._experiment_entry(
+            0, "int main(){}", clean_run(), False,
+        )
+        self.assertIsNone(entry["error_type"])
+        self.assertIsNone(entry["diagnostic"])
+        entry = orchestration._experiment_entry(
+            0, "int main(){}", uaf_hit(), False,
+        )
+        self.assertIn("heap-use-after-free", str(entry["error_type"]))
+        self.assertNotEqual("compile-failed", entry["error_type"])
+        self.assertIsNone(entry["diagnostic"])
+
+    def test_compile_stage_environment_failures_are_not_compile_errors(self):
+        # Review P2 on the feedback loop: the sidecar also returns
+        # stage="compile" when the compile step timed out or the sandbox
+        # was unavailable; those must not be labelled compile-failed nor
+        # fed to the critic as actionable compiler feedback.
+        from lima import agent_orchestrator as orchestration
+
+        for marker in (
+            "sandbox-unavailable",
+            "sandbox-failed",
+            "repro-step-timed-out",
+            "repro-binary-missing",
+        ):
+            with self.subTest(marker=marker):
+                observed = observation_from(repro_response(
+                    stage="compile", asan_report=None,
+                    diagnostics=(marker,),
+                ))
+                entry = orchestration._experiment_entry(
+                    0, "int main(){}", observed, False,
+                )
+                self.assertEqual(
+                    "compile-environment-failed", entry["error_type"],
+                )
+                self.assertIn(marker, entry["diagnostic"])
+                # No compiler-stderr excerpt for environment failures.
+                self.assertNotIn("error:", entry["diagnostic"])
+
+    def test_compiler_stderr_containing_marker_text_still_compiles_fails(self):
+        # Review P2, round 2: substring matching misread a REAL compile
+        # error whose text happens to contain a marker ("error:
+        # 'sandbox-unavailable' was not declared") as an environment
+        # failure, dropping the compiler feedback and the repair round.
+        # Markers are matched as standalone diagnostic entries only.
+        from lima import agent_orchestrator as orchestration
+
+        observed = observation_from(repro_response(
+            stage="compile", asan_report=None,
+            diagnostics=(
+                "driver.cpp:30:5: error: use of undeclared identifier "
+                "'sandbox-unavailable'",
+            ),
+        ))
+        self.assertFalse(
+            orchestration._compile_environment_markers(observed),
+        )
+        entry = orchestration._experiment_entry(
+            0, "int main(){}", observed, False,
+        )
+        self.assertEqual("compile-failed", entry["error_type"])
+        self.assertIn("undeclared identifier", entry["diagnostic"])
+        self.assertIn("sandbox-unavailable", entry["diagnostic"])
+
+    def test_environment_failed_compiles_grant_no_repair_rounds(self):
+        # The repair-round grant exists because compile errors are
+        # precise mechanical feedback; a sandbox outage is not, so it
+        # must not extend the experiment budget nor invite driver
+        # revisions. dialogue_rounds=1 buys two experiments; the first
+        # being an environment failure must keep it at two.
+        transport = ScriptedPlatformTransport(
+            specialist=[hypothesis_json(driver="int first() { return 0; }")],
+            critic=[critic_json(
+                assessment="revise-experiment",
+                revised_driver="int v1() { FREE_THEN_USE; }",
+            )],
+        )
+        observed = observation_from(repro_response(
+            stage="compile", asan_report=None,
+            diagnostics=("sandbox-unavailable",),
+        ))
+        outcome = _run(
+            llm_transport=transport,
+            workbench=FakeWorkbench([observed, clean_run()]),
+        )
+        log = outcome.targets[0].experiment_log
+        self.assertEqual(2, len(log))
+        self.assertEqual("compile-environment-failed", log[0]["error_type"])
+        critic_user = next(
+            payload["messages"][1]["content"]
+            for payload in transport.calls
+            if CRITIC_ROLE in payload["messages"][0]["content"]
+        )
+        # The critic sees one coherent story: an environment failure,
+        # not a compile-failed + sandbox-unavailable contradiction.
+        self.assertIn("compile-environment-failed", critic_user)
+        self.assertNotIn('"error_type": "compile-failed"', critic_user)
+
+    def test_critic_repair_context_carries_the_compile_error_text(self):
+        # The last-mile fix end to end: a compile failure must reach the
+        # model as actionable feedback -- the critic payload carries the
+        # classification and the bounded compiler error line, and the
+        # repair round is still granted on top of the dialogue budget.
+        transport = ScriptedPlatformTransport(
+            specialist=[hypothesis_json(driver="int first() { return 0; }")],
+            critic=[critic_json(
+                assessment="revise-experiment",
+                revised_driver="int fixed() { FREE_THEN_USE; }",
+            )],
+        )
+        clang_error = (
+            "driver.cpp:17:12: error: void function 'inject_realloc' "
+            "should not return a value"
+        )
+        observed = observation_from(repro_response(
+            stage="compile", asan_report=None,
+            diagnostics=(clang_error,),
+        ))
+        outcome = _run(
+            llm_transport=transport,
+            workbench=FakeWorkbench([observed, uaf_hit()]),
+        )
+        self.assertEqual(2, len(outcome.targets[0].experiment_log))
+        critic_user = next(
+            payload["messages"][1]["content"]
+            for payload in transport.calls
+            if CRITIC_ROLE in payload["messages"][0]["content"]
+        )
+        self.assertIn("compile-failed", critic_user)
+        self.assertIn("inject_realloc", critic_user)
+        ledger = outcome.targets[0].experiment_log[0]
+        self.assertEqual("compile-failed", ledger["error_type"])
+        self.assertIn("inject_realloc", ledger["diagnostic"])
+
     def test_parse_discovery_reply_contract(self):
         from lima.agent_orchestrator import (
             PlatformFormatError,
