@@ -817,14 +817,20 @@ def run_openharmony_case(
         (fixed_record, _, _) = _run_revision(case.fixed, fixed_workspace)
         return _finish(vulnerable_record, fixed_record)
     if len(matching) > 1:
+        # Battles r13/r14: the recipe-driven loop lands several
+        # runtime-confirmed findings on the same case path in one round
+        # (four in each).  Abundance is not ambiguity: every match is
+        # already runtime-confirmed on the case's target path and CWE,
+        # so the replay uses the first (deterministic review order) and
+        # a diagnostic discloses the selection instead of failing the
+        # case as inconclusive.
         vulnerable_record = replace(
             vulnerable_record,
-            status=ValidationStatus.INCONCLUSIVE,
             diagnostics=(*vulnerable_record.diagnostics,
-                         "ambiguous-matching-finding"),
+                         f"multiple-matching-findings: {len(matching)} "
+                         "runtime-confirmed matches; the 3+3 replay "
+                         "uses the first"),
         )
-        (fixed_record, _, _) = _run_revision(case.fixed, fixed_workspace)
-        return _finish(vulnerable_record, fixed_record)
 
     final = matching[0]
     driver = final.poc_driver_code
@@ -1108,8 +1114,10 @@ def _final_finding(
         and finding.cwe == result.case.cwe
         and finding.path in result.case.target_paths
     ]
-    if len(matching) != 1 or not matching[0].poc_driver_code:
+    if not matching or not matching[0].poc_driver_code:
         return None
+    # Multiple runtime-confirmed matches replay the first (review
+    # order); the verdict layer discloses the selection.
     return matching[0]
 
 
@@ -1220,11 +1228,49 @@ def _report_markdown(
 
     def context_for_finding(finding):
         paired = finding is final
+        regression = ""
+        if paired:
+            regression = _regression_verdict(result)
+            if result.status != ValidationStatus.PASSED:
+                # Review P2 on the multi-match contract: the selected
+                # finding keeps its factual association with the known
+                # case, but an affirmative "CVE match" must not read as
+                # a dual-version-verified attribution while the case
+                # verdict is failed or inconclusive (r15: the broad-
+                # sweep PoC also crashed the fixed build and the case
+                # correctly failed).
+                reason = next(
+                    (
+                        code for code in result.reason_codes
+                        if code.startswith((
+                            "fixed-", "vulnerable-", "required-",
+                            "replay-", "provider-",
+                        ))
+                    ),
+                    next(
+                        (
+                            code for code in result.reason_codes
+                            if code.startswith("multiple-")
+                        ),
+                        result.status.value,
+                    ),
+                )
+                regression = (
+                    f"{regression}；" if regression else ""
+                ) + (
+                    f"双版本验证未通过（案例判定：{result.status.value}；"
+                    f"直接原因：{reason}）——CVE 编号仅为已知案例关联，"
+                    "不构成已验证归因；修复建议为该已知案例的上游修复"
+                    "内容，未经本平台双版本验证背书"
+                )
         return replace(
             context,
             cve_ids=(case.cve_id,) if paired else (),
+            cve_attribution_verified=(
+                result.status == ValidationStatus.PASSED
+            ) if paired else context.cve_attribution_verified,
             patch_suggestion=case.remediation if paired else "",
-            remediation_regression=_regression_verdict(result) if paired else "",
+            remediation_regression=regression,
             **_impact_context(finding, git_root),
         )
 

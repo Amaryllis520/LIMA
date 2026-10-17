@@ -819,6 +819,42 @@ class PairedRunTests(unittest.TestCase):
         self.assertEqual(3, len(fixed_calls))
         self.assertEqual(vulnerable_calls[0][2], fixed_calls[0][2])
 
+    def test_multiple_matching_findings_replay_the_first_with_disclosure(
+        self,
+    ):
+        # Battles r13/r14: the recipe-driven loop lands SEVERAL
+        # runtime-confirmed findings on the same case path in one round
+        # (four in each); the old ambiguity guard (exactly one match)
+        # turned that abundance into case-level inconclusive.  The
+        # contract now selects deterministically: the first matching
+        # finding is replayed through the 3+3 matrix, and a diagnostic
+        # discloses how many matches existed and which one was used.
+        from dataclasses import replace
+
+        target_hit = _observation(
+            ok=False, stage="run", error_type="'heap-use-after-free'",
+            faulting_file="'src/parser.c'", exit_code=1,
+        )
+        clean = _observation(ok=True, stage="run", exit_code=0)
+        second = replace(
+            _finding(driver="int second_driver() { return 1; }"),
+            target_id="second-target", line=31,
+        )
+        result, workbenches = self._run(
+            vulnerable_outcome=_outcome([_finding(), second]),
+            vulnerable_replay=[target_hit] * 3,
+            fixed_outcome=_outcome([]),
+            fixed_replay=[clean] * 3,
+        )
+        self.assertEqual("passed", result.status.value)
+        self.assertTrue(any(
+            reason.startswith("multiple-matching-findings")
+            for reason in result.reason_codes
+        ), result.reason_codes)
+        # The replay used the FIRST finding's driver, not the second's.
+        replayed_driver = workbenches[0][1].calls[0][2]
+        self.assertEqual("int main() { return 0; }", replayed_driver)
+
     def test_unstable_vulnerable_replay_fails(self):
         target_hit = _observation(
             ok=False, stage="run", error_type="'heap-use-after-free'",
@@ -1264,7 +1300,11 @@ class BundleWriterTests(unittest.TestCase):
         self.assertNotIn("引入提交", other_report)
         self.assertNotIn("**PoC 回归验证**", other_report)
 
-    def test_report_does_not_select_an_ambiguous_replay_finding(self):
+    def test_report_selects_the_first_of_multiple_matching_findings(self):
+        # Contract change after battles r13/r14: several runtime-
+        # confirmed matches on the case path replay the first; the
+        # paired dossier (CVE/patch/regression attribution) belongs to
+        # that first finding and the others still render.
         from dataclasses import replace
 
         outcome = self.result.vulnerable.platform_outcome
@@ -1275,8 +1315,92 @@ class BundleWriterTests(unittest.TestCase):
             vulnerable=replace(self.result.vulnerable,
                                platform_outcome=replace(outcome, findings=(first, second))),
         )
-        self.assertNotIn("**PoC 回归验证**",
-                         self.module._report_markdown(result, "a" * 64))
+        report = self.module._report_markdown(result, "a" * 64)
+        dossiers = report.split("# 漏洞研究报告")[1:]
+        self.assertEqual(2, len(dossiers))
+        self.assertIn("**PoC 回归验证**", dossiers[0])
+        self.assertNotIn("**PoC 回归验证**", dossiers[1])
+
+    def test_failed_case_keeps_association_without_verified_attribution(
+        self,
+    ):
+        # Review P2 on the multi-match contract (the r15 shape): the
+        # case FAILED -- fixed-matching-finding, the broad-sweep PoC
+        # also crashed the fixed build -- and the selected finding's
+        # dossier must distinguish the factual known-case association
+        # from a dual-version-verified attribution instead of reading
+        # as an affirmative CVE match.
+        from dataclasses import replace
+
+        outcome = self.result.vulnerable.platform_outcome
+        first = outcome.findings[0]
+        second = replace(first, target_id="second-target", line=first.line + 1)
+        result = replace(
+            self.result,
+            vulnerable=replace(self.result.vulnerable,
+                               platform_outcome=replace(outcome, findings=(first, second))),
+            status=self.module.ValidationStatus.FAILED,
+            reason_codes=(
+                "multiple-matching-findings: 2 runtime-confirmed "
+                "matches; the 3+3 replay uses the first",
+                "fixed-matching-finding",
+            ),
+        )
+        dossiers = self.module._report_markdown(
+            result, "a" * 64,
+        ).split("# 漏洞研究报告")[1:]
+        self.assertEqual(2, len(dossiers))
+        paired = dossiers[0]
+        self.assertIn(self.case.cve_id, paired)
+        self.assertIn("双版本验证未通过（案例判定：failed", paired)
+        self.assertIn("直接原因：fixed-matching-finding", paired)
+        self.assertIn("不构成已验证归因", paired)
+        # Whole-report wording: no affirmative CVE-match phrasing may
+        # survive anywhere in the failed-state paired dossier.
+        self.assertNotIn("已匹配已知公开 CVE", paired)
+        self.assertIn("**CVE 匹配**: " + self.case.cve_id, paired)
+        self.assertIn("已知案例关联，归因未验证", paired)
+        self.assertIn("关联已知公开 CVE", paired)
+        self.assertNotIn("披露前请核对", paired)
+        # The passing case keeps the affirmative attribution (no gate
+        # text leaks into the clean baseline).
+        baseline = self.module._report_markdown(
+            self.result, "a" * 64,
+        ).split("# 漏洞研究报告")[1:]
+        self.assertNotIn("不构成已验证归因", baseline[0])
+        self.assertIn("已匹配已知公开 CVE", baseline[0])
+
+    def test_unreviewed_fixed_side_is_the_named_cause_not_the_note(self):
+        # Review P2 round 2: when the FIXED side is inconclusive because
+        # its required review went unfinished, the gate's direct cause
+        # must name that review gap -- the informational
+        # multiple-matching-findings note must not mask it.
+        from dataclasses import replace
+
+        outcome = self.result.vulnerable.platform_outcome
+        first = outcome.findings[0]
+        second = replace(first, target_id="second-target", line=first.line + 1)
+        result = replace(
+            self.result,
+            vulnerable=replace(self.result.vulnerable,
+                               platform_outcome=replace(outcome, findings=(first, second))),
+            status=self.module.ValidationStatus.INCONCLUSIVE,
+            reason_codes=(
+                "multiple-matching-findings: 2 runtime-confirmed "
+                "matches; the 3+3 replay uses the first",
+                "required-review-unreviewed-units: expat/lib/xmlparse.c",
+            ),
+        )
+        paired = self.module._report_markdown(
+            result, "a" * 64,
+        ).split("# 漏洞研究报告")[1:][0]
+        self.assertIn("案例判定：inconclusive", paired)
+        self.assertIn(
+            "直接原因：required-review-unreviewed-units: "
+            "expat/lib/xmlparse.c",
+            paired,
+        )
+        self.assertNotIn("直接原因：multiple-matching", paired)
 
     def test_report_does_not_pass_clean_replay_with_inconclusive_status(self):
         from dataclasses import replace
