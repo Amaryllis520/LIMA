@@ -1180,7 +1180,12 @@ class DiscoveryFallbackTests(unittest.TestCase):
 
         cap = orchestration._discovery_lead_cap
         self.assertEqual(2 * orchestration._MAX_DISCOVERY_LEADS, cap(0))
-        self.assertEqual(2 * orchestration._MAX_DISCOVERY_LEADS, cap(5))
+        # The floor holds while allowance*windows stays under it
+        # (4/window: through 4 windows), then the scaling takes over.
+        self.assertEqual(2 * orchestration._MAX_DISCOVERY_LEADS, cap(4))
+        self.assertEqual(
+            5 * orchestration._MAX_DISCOVERY_LEADS_PER_WINDOW, cap(5)
+        )
         self.assertEqual(
             6 * orchestration._MAX_DISCOVERY_LEADS_PER_WINDOW, cap(6)
         )
@@ -1188,6 +1193,23 @@ class DiscoveryFallbackTests(unittest.TestCase):
             8 * orchestration._MAX_DISCOVERY_LEADS_PER_WINDOW, cap(8)
         )
         self.assertLess(cap(6), cap(7))
+
+    def test_per_window_lead_allowance_is_battle_tuned(self):
+        # Round 2 of the arms race (battles r5-r13): glm-5.3 reports
+        # 15-21 leads across the ~6 windows of xmlparse.c -- the r13
+        # round kept 18 under the previous 3/window allowance and still
+        # capped at 19+, which kept
+        # failing the required-review gate on the FIXED side, so the
+        # 3+3 replay never ran and the case stayed inconclusive despite
+        # four runtime-confirmed findings.  4/window (24 at 6 windows)
+        # gives headroom over the observed 21-lead maximum while the
+        # reply schema ceiling (8/window) still bounds the worst case
+        # and the call budget still bounds the review cost.
+        from lima import agent_orchestrator as orchestration
+
+        self.assertEqual(
+            4, orchestration._MAX_DISCOVERY_LEADS_PER_WINDOW,
+        )
 
     def test_dense_large_unit_is_not_capped_at_three_leads_per_window(self):
         # A unit large enough for several windows whose every window
