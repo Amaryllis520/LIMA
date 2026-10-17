@@ -44,3 +44,7 @@ PROGRESS.md
 
 # Agent-local working notes (SDD plans, scratch state) -- never product code
 .superpowers/
+
+# ZCode private working area (battle reports, PoC evidence, submission drafts) --
+# must never enter the public repo before disclosure review
+.zcode/
