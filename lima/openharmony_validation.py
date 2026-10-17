@@ -925,11 +925,14 @@ def run_openharmony_case(
         fixed_record = replace(
             fixed_record,
             diagnostics=(*fixed_record.diagnostics,
-                         f"fixed-semantic-hypotheses: {len(semantic_only)} "
-                         "matching semantic-supported finding(s) on the "
-                         "fixed side -- known characteristic per V03 "
-                         "(not runtime-confirmed; the hard-FP rule and "
-                         "the 3+3 clean replay still stand)"),
+                         f"fixed-non-runtime-findings: "
+                         f"{len(semantic_only)} "
+                         "matching positive finding(s) below "
+                         "runtime-confirmed on the fixed side "
+                         "(semantic-supported / fact-verified / "
+                         "tool-corroborated) -- known characteristic "
+                         "per V03; the hard-FP rule and the 3+3 clean "
+                         "replay still stand"),
         )
 
     observations, elapsed, budget_error = _replay(

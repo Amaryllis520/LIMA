@@ -926,7 +926,7 @@ class PairedRunTests(unittest.TestCase):
         )
         self.assertEqual("passed", result.status.value)
         self.assertTrue(any(
-            reason.startswith("fixed-semantic-hypotheses")
+            reason.startswith("fixed-non-runtime-findings")
             for reason in result.reason_codes
         ), result.reason_codes)
 

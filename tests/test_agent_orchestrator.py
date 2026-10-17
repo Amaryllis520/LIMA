@@ -1918,19 +1918,22 @@ class DiscoveryFallbackTests(unittest.TestCase):
             "read the target snapshot's actual compile parameters", uaf,
         )
         self.assertIn("XMLCALL", uaf)
-        # Battle r15: the case pipeline ran end to end and correctly
-        # rejected a broad-sweep PoC that also crashed the fixed build
-        # (fixed-matching-finding) -- the discriminating PoC must pin
-        # the verified ordinal (official count=3 shape; the composition
-        # probe verified the vulnerable side crashes on the fourth
-        # allocation from the create, the fixed side stays clean).
+        # The discriminating PoC must pin the verified ordinal (the
+        # composition probe verified it discriminates: vulnerable
+        # crashes, fixed clean).  The r15 erratum (ledger): the fixed
+        # side never crashed in r15 -- the case failed on semantic
+        # hypotheses misjudged by the old contract; r17/r18 failed on
+        # driver-invalid usage in the 3+3.  The pin rule is grounded
+        # in the probe's verified discrimination, not in r15.
         self.assertIn("Discriminating-PoC rule", uaf)
         self.assertIn("EXPLORATION only", uaf)
         self.assertIn("FOURTH", uaf)
         self.assertIn("allow three, fail the fourth", uaf)
         self.assertIn("fresh counter, exactly like the official "
                       "regression test", uaf)
-        self.assertIn("fixed-matching-finding", uaf)
+        self.assertIn("verified discrimination", uaf)
+        self.assertIn("r17/r18 both failed the 3+3", uaf)
+        self.assertNotIn("a sweeping driver also crashes", uaf)
         # Battle r17: the 3+3 replay ran both sides and the pinned-
         # ordinal driver crashed the FIXED build too -- root cause was
         # a driver-induced UAF (XML_ParserReset inside the handler
