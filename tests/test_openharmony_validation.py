@@ -1398,8 +1398,9 @@ class BundleWriterTests(unittest.TestCase):
         self,
     ):
         # Review P2 on the multi-match contract (the r15 shape): the
-        # case FAILED -- fixed-matching-finding, the broad-sweep PoC
-        # also crashed the fixed build -- and the selected finding's
+        # case FAILED on fixed-matching-finding (per the ledger
+        # erratum: semantic hypotheses misjudged by the then-current
+        # contract) -- and the selected finding's
         # dossier must distinguish the factual known-case association
         # from a dual-version-verified attribution instead of reading
         # as an affirmative CVE match.

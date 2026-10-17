@@ -1264,9 +1264,9 @@ def _report_markdown(
                 # finding keeps its factual association with the known
                 # case, but an affirmative "CVE match" must not read as
                 # a dual-version-verified attribution while the case
-                # verdict is failed or inconclusive (r15: the broad-
-                # sweep PoC also crashed the fixed build and the case
-                # correctly failed).
+                # verdict is failed or inconclusive (r15's case failed
+                # on semantic hypotheses misjudged by the then-current
+                # contract; r17/r18 on driver-invalid usage).
                 # Informational diagnostics that share a failure prefix
                 # but never cause the failure themselves; picking one as
                 # the "direct cause" would mask the real reason (review
