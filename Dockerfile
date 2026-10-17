@@ -44,6 +44,8 @@ COPY --chown=lima:lima evaluation_data ./evaluation_data
 
 FROM base AS test
 COPY --chown=lima:lima tests ./tests
+# Static competition configuration tests read both files from the source tree.
+COPY --chown=lima:lima deploy/competition/.env.competition.example deploy/competition/README.md ./deploy/competition/
 COPY --chown=lima:lima Dockerfile pyproject.toml docker-compose.yml .env.example LIMA_ROADMAP.md CONTRIBUTING.md ./
 COPY --chown=lima:lima .github ./.github
 # 契约测试在镜像内校验前端 CI 门禁与产物布局（T9）以及 React 唯一前端

@@ -192,6 +192,9 @@ OpenHarmony pilot 验证 CLI（`scripts/run_openharmony_validation.py`）的完�
 - pilot 的 `CxxMemoryAnalyzerClient` 响应限额固定 8388608 字节；
   `budget_factory` 固定 max_calls=160、max_output_bytes=16777216。
   app 的同类预算环境变量不会改变这些值。
+- Sidecar 的 `LIMA_CXX_MAX_OUTPUT_BYTES`（`cxx_analyzer/config.py`，默认
+  1048576 字节，Compose 已透传）限制构建步骤输出；示例中的
+  `LIMA_CXX_AGENT_MAX_OUTPUT_BYTES` 限制 app agent 工具输出，两者互不替代。
 - `LIMA_CXX_AGENT_REQUEST_PARAMS_JSON` 仅 pilot 读取；默认 `{}`，按 provider
   文档选择，例如 `{"thinking":{"type":"disabled"}}`；不将其当作 app 通用参数。
 - Compose 的插值输入与容器环境是两层：`--env-file` 只供插值，
