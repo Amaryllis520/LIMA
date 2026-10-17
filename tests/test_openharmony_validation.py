@@ -902,6 +902,52 @@ class PairedRunTests(unittest.TestCase):
         self.assertEqual("inconclusive", result.status.value)
         self.assertIn("fixed-replay-compile-failure", result.reason_codes)
 
+    def test_fixed_semantic_hypothesis_does_not_fail_the_case(self):
+        # Battles r15/r16 (and the frozen V03 criteria): the fixed side
+        # reliably produces semantic-supported hypotheses on clean code
+        # (r16: lines 4611/5713, never runtime-confirmed) -- a known
+        # model characteristic that V03 explicitly classifies as a
+        # non-hard false positive ("only runtime-confirmed on a
+        # non-positive side is a hard FP").  The case contract must
+        # follow: semantic-only matches on the fixed side are disclosed
+        # as a diagnostic but do not fail the case; a runtime-confirmed
+        # match on fixed still does.
+        target_hit = _observation(
+            ok=False, stage="run", error_type="'heap-use-after-free'",
+            faulting_file="'src/parser.c'", exit_code=1,
+        )
+        clean = _observation(ok=True, stage="run", exit_code=0)
+        semantic_on_fixed = _finding(state="semantic-supported")
+        result, _ = self._run(
+            vulnerable_outcome=_outcome([_finding()]),
+            vulnerable_replay=[target_hit] * 3,
+            fixed_outcome=_outcome([semantic_on_fixed]),
+            fixed_replay=[clean] * 3,
+        )
+        self.assertEqual("passed", result.status.value)
+        self.assertTrue(any(
+            reason.startswith("fixed-semantic-hypotheses")
+            for reason in result.reason_codes
+        ), result.reason_codes)
+
+    def test_fixed_runtime_confirmed_match_still_fails_the_case(self):
+        # The hard-FP rule survives the alignment: a runtime-confirmed
+        # finding on the fixed side demonstrates the defect is still
+        # reachable and the case must fail.
+        target_hit = _observation(
+            ok=False, stage="run", error_type="'heap-use-after-free'",
+            faulting_file="'src/parser.c'", exit_code=1,
+        )
+        clean = _observation(ok=True, stage="run", exit_code=0)
+        result, _ = self._run(
+            vulnerable_outcome=_outcome([_finding()]),
+            vulnerable_replay=[target_hit] * 3,
+            fixed_outcome=_outcome([_finding()]),
+            fixed_replay=[clean] * 3,
+        )
+        self.assertEqual("failed", result.status.value)
+        self.assertIn("fixed-matching-finding", result.reason_codes)
+
     def test_no_matching_vulnerable_finding_fails(self):
         clean = _observation(ok=True, stage="run", exit_code=0)
         result, _ = self._run(

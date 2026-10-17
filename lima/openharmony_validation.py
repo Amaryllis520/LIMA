@@ -897,7 +897,7 @@ def run_openharmony_case(
         finding for finding in fixed_outcome.findings
         if finding.cwe == case.cwe
         and finding.path in case.target_paths
-        and finding.state not in _NON_POSITIVE_FINDING_STATES
+        and finding.state == "runtime-confirmed"
     ]
     if still_vulnerable:
         fixed_record = replace(
@@ -906,6 +906,31 @@ def run_openharmony_case(
                          "fixed-matching-finding"),
         )
         return _finish(vulnerable_record, fixed_record)
+    # Battles r15/r16 (and the frozen V03 criteria): the fixed side
+    # reliably produces semantic-supported hypotheses on clean code
+    # (never runtime-confirmed) -- a known model characteristic that
+    # V03 classifies as a non-hard false positive.  Only a
+    # runtime-confirmed match demonstrates the defect is still
+    # reachable; semantic-only matches are disclosed here and the
+    # runtime-level discrimination stays with the 3+3 replay below
+    # (the same PoC must run clean on the fixed revision).
+    semantic_only = [
+        finding for finding in fixed_outcome.findings
+        if finding.cwe == case.cwe
+        and finding.path in case.target_paths
+        and finding.state not in _NON_POSITIVE_FINDING_STATES
+        and finding.state != "runtime-confirmed"
+    ]
+    if semantic_only:
+        fixed_record = replace(
+            fixed_record,
+            diagnostics=(*fixed_record.diagnostics,
+                         f"fixed-semantic-hypotheses: {len(semantic_only)} "
+                         "matching semantic-supported finding(s) on the "
+                         "fixed side -- known characteristic per V03 "
+                         "(not runtime-confirmed; the hard-FP rule and "
+                         "the 3+3 clean replay still stand)"),
+        )
 
     observations, elapsed, budget_error = _replay(
         fixed_workbench, case.fixed.repository_key,
