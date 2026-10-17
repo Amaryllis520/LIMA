@@ -1846,6 +1846,12 @@ class DiscoveryFallbackTests(unittest.TestCase):
         )
         self.assertIn("never stub a function on", _SPECIALIST_PLAYBOOK)
         self.assertIn("shrink timing windows", _SPECIALIST_PLAYBOOK)
+        # Battle r18: a free-then-use of the library handle crashed the
+        # FIXED side inside library code and counted as a hit on both
+        # revisions -- a driver self-UAF, not a target defect.
+        self.assertIn("Handle lifetime", _SPECIALIST_PLAYBOOK)
+        self.assertIn("driver self-UAF from invalid usage",
+                      _SPECIALIST_PLAYBOOK)
 
     def test_playbook_carries_battle_tested_cwe_recipes(self):
         # Frozen from the sprint plan V02: the generic playbook gains a
@@ -1912,6 +1918,37 @@ class DiscoveryFallbackTests(unittest.TestCase):
             "read the target snapshot's actual compile parameters", uaf,
         )
         self.assertIn("XMLCALL", uaf)
+        # The discriminating PoC must pin the verified ordinal (the
+        # composition probe verified it discriminates: vulnerable
+        # crashes, fixed clean).  The r15 erratum (ledger): the fixed
+        # side never crashed in r15 -- the case failed on semantic
+        # hypotheses misjudged by the old contract.  r17 failed the
+        # 3+3 replay on driver-invalid usage; r18 failed at the
+        # fixed-side review before the replay ran.  The pin rule is
+        # grounded in the probe's verified discrimination.
+        self.assertIn("Discriminating-PoC rule", uaf)
+        self.assertIn("EXPLORATION only", uaf)
+        self.assertIn("FOURTH", uaf)
+        self.assertIn("allow three, fail the fourth", uaf)
+        self.assertIn("fresh counter, exactly like the official "
+                      "regression test", uaf)
+        self.assertIn("verified discrimination", uaf)
+        # Review P2: r18 failed at the fixed-side review (before the
+        # replay), not at the 3+3 -- the wording must match.
+        self.assertIn("r17 failed the 3+3 replay", uaf)
+        self.assertIn("r18 failed at the fixed-side review", uaf)
+        self.assertIn("before the replay even ran", uaf)
+        self.assertNotIn("r17/r18 both failed the 3+3", uaf)
+        self.assertNotIn("a sweeping driver also crashes", uaf)
+        # Battle r17: the 3+3 replay ran both sides and the pinned-
+        # ordinal driver crashed the FIXED build too -- root cause was
+        # a driver-induced UAF (XML_ParserReset inside the handler
+        # while doProlog still holds DTD pointers).  Reuse belongs
+        # after the parse call returns.
+        self.assertIn("Handler discipline", uaf)
+        self.assertIn("NEVER reset or re-parse from "
+                      "inside the external-entity handler", uaf)
+        self.assertIn("driver-induced UAF", uaf)
         # The wrong claim from commit 72aa004 must not come back.
         self.assertNotIn("empty context", uaf)
         # dsoftbus/avrcp lineage: caller-precondition replication, the
