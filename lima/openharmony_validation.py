@@ -897,7 +897,7 @@ def run_openharmony_case(
         finding for finding in fixed_outcome.findings
         if finding.cwe == case.cwe
         and finding.path in case.target_paths
-        and finding.state not in _NON_POSITIVE_FINDING_STATES
+        and finding.state == "runtime-confirmed"
     ]
     if still_vulnerable:
         fixed_record = replace(
@@ -906,6 +906,34 @@ def run_openharmony_case(
                          "fixed-matching-finding"),
         )
         return _finish(vulnerable_record, fixed_record)
+    # Battles r15/r16 (and the frozen V03 criteria): the fixed side
+    # reliably produces semantic-supported hypotheses on clean code
+    # (never runtime-confirmed) -- a known model characteristic that
+    # V03 classifies as a non-hard false positive.  Only a
+    # runtime-confirmed match demonstrates the defect is still
+    # reachable; semantic-only matches are disclosed here and the
+    # runtime-level discrimination stays with the 3+3 replay below
+    # (the same PoC must run clean on the fixed revision).
+    semantic_only = [
+        finding for finding in fixed_outcome.findings
+        if finding.cwe == case.cwe
+        and finding.path in case.target_paths
+        and finding.state not in _NON_POSITIVE_FINDING_STATES
+        and finding.state != "runtime-confirmed"
+    ]
+    if semantic_only:
+        fixed_record = replace(
+            fixed_record,
+            diagnostics=(*fixed_record.diagnostics,
+                         f"fixed-non-runtime-findings: "
+                         f"{len(semantic_only)} "
+                         "matching finding(s) below runtime-confirmed "
+                         "on the fixed side (semantic-supported / "
+                         "fact-verified / tool-corroborated / "
+                         "needs-human-review) -- known characteristic "
+                         "per V03; the hard-FP rule and the 3+3 clean "
+                         "replay still stand"),
+        )
 
     observations, elapsed, budget_error = _replay(
         fixed_workbench, case.fixed.repository_key,
@@ -1236,9 +1264,16 @@ def _report_markdown(
                 # finding keeps its factual association with the known
                 # case, but an affirmative "CVE match" must not read as
                 # a dual-version-verified attribution while the case
-                # verdict is failed or inconclusive (r15: the broad-
-                # sweep PoC also crashed the fixed build and the case
-                # correctly failed).
+                # verdict is failed or inconclusive (r15's case failed
+                # on semantic hypotheses misjudged by the then-current
+                # contract; r17/r18 on driver-invalid usage).
+                # Informational diagnostics that share a failure prefix
+                # but never cause the failure themselves; picking one as
+                # the "direct cause" would mask the real reason (review
+                # P2: fixed-non-runtime-findings + fixed-replay-hit).
+                _INFORMATIONAL_DIAGNOSTIC_PREFIXES: Final = (
+                    "fixed-non-runtime-findings",
+                )
                 reason = next(
                     (
                         code for code in result.reason_codes
@@ -1246,6 +1281,9 @@ def _report_markdown(
                             "fixed-", "vulnerable-", "required-",
                             "replay-", "provider-",
                         ))
+                        and not code.startswith(
+                            _INFORMATIONAL_DIAGNOSTIC_PREFIXES
+                        )
                     ),
                     next(
                         (

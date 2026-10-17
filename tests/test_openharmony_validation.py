@@ -902,6 +902,79 @@ class PairedRunTests(unittest.TestCase):
         self.assertEqual("inconclusive", result.status.value)
         self.assertIn("fixed-replay-compile-failure", result.reason_codes)
 
+    def test_fixed_semantic_hypothesis_does_not_fail_the_case(self):
+        # Battles r15/r16 (and the frozen V03 criteria): the fixed side
+        # reliably produces semantic-supported hypotheses on clean code
+        # (r16: lines 4611/5713, never runtime-confirmed) -- a known
+        # model characteristic that V03 explicitly classifies as a
+        # non-hard false positive ("only runtime-confirmed on a
+        # non-positive side is a hard FP").  The case contract must
+        # follow: semantic-only matches on the fixed side are disclosed
+        # as a diagnostic but do not fail the case; a runtime-confirmed
+        # match on fixed still does.
+        target_hit = _observation(
+            ok=False, stage="run", error_type="'heap-use-after-free'",
+            faulting_file="'src/parser.c'", exit_code=1,
+        )
+        clean = _observation(ok=True, stage="run", exit_code=0)
+        semantic_on_fixed = _finding(state="semantic-supported")
+        result, _ = self._run(
+            vulnerable_outcome=_outcome([_finding()]),
+            vulnerable_replay=[target_hit] * 3,
+            fixed_outcome=_outcome([semantic_on_fixed]),
+            fixed_replay=[clean] * 3,
+        )
+        self.assertEqual("passed", result.status.value)
+        self.assertTrue(any(
+            reason.startswith("fixed-non-runtime-findings")
+            for reason in result.reason_codes
+        ), result.reason_codes)
+
+    def test_fixed_needs_human_review_also_disclosed_not_fatal(self):
+        # Review P2: the non-runtime filter also collects
+        # needs-human-review (a Finding-projecting state in
+        # UAF_FINDING_STATES, not in _NON_POSITIVE_FINDING_STATES);
+        # the diagnostic must name it and it must not fail the case.
+        from dataclasses import replace as _replace
+
+        target_hit = _observation(
+            ok=False, stage="run", error_type="'heap-use-after-free'",
+            faulting_file="'src/parser.c'", exit_code=1,
+        )
+        clean = _observation(ok=True, stage="run", exit_code=0)
+        nhr = _replace(_finding(state="semantic-supported"),
+                       state="needs-human-review")
+        result, _ = self._run(
+            vulnerable_outcome=_outcome([_finding()]),
+            vulnerable_replay=[target_hit] * 3,
+            fixed_outcome=_outcome([nhr]),
+            fixed_replay=[clean] * 3,
+        )
+        self.assertEqual("passed", result.status.value)
+        disclosed = next(
+            reason for reason in result.reason_codes
+            if reason.startswith("fixed-non-runtime-findings")
+        )
+        self.assertIn("needs-human-review", disclosed)
+
+    def test_fixed_runtime_confirmed_match_still_fails_the_case(self):
+        # The hard-FP rule survives the alignment: a runtime-confirmed
+        # finding on the fixed side demonstrates the defect is still
+        # reachable and the case must fail.
+        target_hit = _observation(
+            ok=False, stage="run", error_type="'heap-use-after-free'",
+            faulting_file="'src/parser.c'", exit_code=1,
+        )
+        clean = _observation(ok=True, stage="run", exit_code=0)
+        result, _ = self._run(
+            vulnerable_outcome=_outcome([_finding()]),
+            vulnerable_replay=[target_hit] * 3,
+            fixed_outcome=_outcome([_finding()]),
+            fixed_replay=[clean] * 3,
+        )
+        self.assertEqual("failed", result.status.value)
+        self.assertIn("fixed-matching-finding", result.reason_codes)
+
     def test_no_matching_vulnerable_finding_fails(self):
         clean = _observation(ok=True, stage="run", exit_code=0)
         result, _ = self._run(
@@ -1325,8 +1398,9 @@ class BundleWriterTests(unittest.TestCase):
         self,
     ):
         # Review P2 on the multi-match contract (the r15 shape): the
-        # case FAILED -- fixed-matching-finding, the broad-sweep PoC
-        # also crashed the fixed build -- and the selected finding's
+        # case FAILED on fixed-matching-finding (per the ledger
+        # erratum: semantic hypotheses misjudged by the then-current
+        # contract) -- and the selected finding's
         # dossier must distinguish the factual known-case association
         # from a dual-version-verified attribution instead of reading
         # as an affirmative CVE match.
@@ -1401,6 +1475,47 @@ class BundleWriterTests(unittest.TestCase):
             paired,
         )
         self.assertNotIn("直接原因：multiple-matching", paired)
+
+    def test_replay_hit_is_the_named_cause_not_the_informational_note(self):
+        # Review P2 round 3: when the fixed side has BOTH non-runtime
+        # findings (the informational fixed-non-runtime-findings
+        # diagnostic) AND the 3+3 replay actually fails
+        # (fixed-replay-hit), the gate's direct cause must name the
+        # replay failure -- the informational note shares the "fixed-"
+        # prefix and must not mask the real reason.
+        from dataclasses import replace
+
+        outcome = self.result.vulnerable.platform_outcome
+        first = outcome.findings[0]
+        second = replace(first, target_id="second-target", line=first.line + 1)
+        semantic = _finding(state="semantic-supported")
+        result = replace(
+            self.result,
+            vulnerable=replace(self.result.vulnerable,
+                               platform_outcome=replace(outcome, findings=(first, second))),
+            fixed=replace(self.result.fixed,
+                          platform_outcome=replace(
+                              self.result.fixed.platform_outcome,
+                              findings=(semantic,))),
+            status=self.module.ValidationStatus.FAILED,
+            reason_codes=(
+                "multiple-matching-findings: 2 runtime-confirmed "
+                "matches; the 3+3 replay uses the first",
+                "fixed-non-runtime-findings: 1 matching finding(s) "
+                "below runtime-confirmed on the fixed side "
+                "(semantic-supported / fact-verified / "
+                "tool-corroborated / needs-human-review) -- known "
+                "characteristic per V03; the hard-FP rule and the "
+                "3+3 clean replay still stand",
+                "fixed-replay-hit",
+            ),
+        )
+        paired = self.module._report_markdown(
+            result, "a" * 64,
+        ).split("# 漏洞研究报告")[1:][0]
+        self.assertIn("案例判定：failed", paired)
+        self.assertIn("直接原因：fixed-replay-hit", paired)
+        self.assertNotIn("直接原因：fixed-non-runtime-findings", paired)
 
     def test_report_does_not_pass_clean_replay_with_inconclusive_status(self):
         from dataclasses import replace
