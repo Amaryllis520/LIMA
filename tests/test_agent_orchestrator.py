@@ -1912,6 +1912,19 @@ class DiscoveryFallbackTests(unittest.TestCase):
             "read the target snapshot's actual compile parameters", uaf,
         )
         self.assertIn("XMLCALL", uaf)
+        # Battle r15: the case pipeline ran end to end and correctly
+        # rejected a broad-sweep PoC that also crashed the fixed build
+        # (fixed-matching-finding) -- the discriminating PoC must pin
+        # the verified ordinal (official count=3 shape; the composition
+        # probe verified the vulnerable side crashes on the fourth
+        # allocation from the create, the fixed side stays clean).
+        self.assertIn("Discriminating-PoC rule", uaf)
+        self.assertIn("EXPLORATION only", uaf)
+        self.assertIn("FOURTH", uaf)
+        self.assertIn("allow three, fail the fourth", uaf)
+        self.assertIn("fresh counter, exactly like the official "
+                      "regression test", uaf)
+        self.assertIn("fixed-matching-finding", uaf)
         # The wrong claim from commit 72aa004 must not come back.
         self.assertNotIn("empty context", uaf)
         # dsoftbus/avrcp lineage: caller-precondition replication, the
