@@ -1925,6 +1925,15 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertIn("fresh counter, exactly like the official "
                       "regression test", uaf)
         self.assertIn("fixed-matching-finding", uaf)
+        # Battle r17: the 3+3 replay ran both sides and the pinned-
+        # ordinal driver crashed the FIXED build too -- root cause was
+        # a driver-induced UAF (XML_ParserReset inside the handler
+        # while doProlog still holds DTD pointers).  Reuse belongs
+        # after the parse call returns.
+        self.assertIn("Handler discipline", uaf)
+        self.assertIn("NEVER reset or re-parse from "
+                      "inside the external-entity handler", uaf)
+        self.assertIn("driver-induced UAF", uaf)
         # The wrong claim from commit 72aa004 must not come back.
         self.assertNotIn("empty context", uaf)
         # dsoftbus/avrcp lineage: caller-precondition replication, the
