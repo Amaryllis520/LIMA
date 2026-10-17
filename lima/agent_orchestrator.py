@@ -241,6 +241,12 @@ _SPECIALIST_PLAYBOOK: Final = (
     "the hypothesized fault path or the allocator/lock machinery it "
     "depends on, and remember no-op stubs shrink timing windows -- a race "
     "that never fires under stubs proves nothing about the real system.\n"
+    "- Handle lifetime (battle r18): never free an object and then "
+    "call any API on the stale handle -- a crash inside library code "
+    "reached that way is a driver self-UAF from invalid usage, not a "
+    "target defect, and it counts as a hit on BOTH revisions. If the "
+    "hypothesis needs an API called on a live object, control-check "
+    "it on a live object and stop there.\n"
     "- A clean run means the fault condition was never met; a driver that "
     "only exercises normal use proves nothing about error paths."
 )

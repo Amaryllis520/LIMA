@@ -1846,6 +1846,12 @@ class DiscoveryFallbackTests(unittest.TestCase):
         )
         self.assertIn("never stub a function on", _SPECIALIST_PLAYBOOK)
         self.assertIn("shrink timing windows", _SPECIALIST_PLAYBOOK)
+        # Battle r18: a free-then-use of the library handle crashed the
+        # FIXED side inside library code and counted as a hit on both
+        # revisions -- a driver self-UAF, not a target defect.
+        self.assertIn("Handle lifetime", _SPECIALIST_PLAYBOOK)
+        self.assertIn("driver self-UAF from invalid usage",
+                      _SPECIALIST_PLAYBOOK)
 
     def test_playbook_carries_battle_tested_cwe_recipes(self):
         # Frozen from the sprint plan V02: the generic playbook gains a
