@@ -930,6 +930,33 @@ class PairedRunTests(unittest.TestCase):
             for reason in result.reason_codes
         ), result.reason_codes)
 
+    def test_fixed_needs_human_review_also_disclosed_not_fatal(self):
+        # Review P2: the non-runtime filter also collects
+        # needs-human-review (a Finding-projecting state in
+        # UAF_FINDING_STATES, not in _NON_POSITIVE_FINDING_STATES);
+        # the diagnostic must name it and it must not fail the case.
+        from dataclasses import replace as _replace
+
+        target_hit = _observation(
+            ok=False, stage="run", error_type="'heap-use-after-free'",
+            faulting_file="'src/parser.c'", exit_code=1,
+        )
+        clean = _observation(ok=True, stage="run", exit_code=0)
+        nhr = _replace(_finding(state="semantic-supported"),
+                       state="needs-human-review")
+        result, _ = self._run(
+            vulnerable_outcome=_outcome([_finding()]),
+            vulnerable_replay=[target_hit] * 3,
+            fixed_outcome=_outcome([nhr]),
+            fixed_replay=[clean] * 3,
+        )
+        self.assertEqual("passed", result.status.value)
+        disclosed = next(
+            reason for reason in result.reason_codes
+            if reason.startswith("fixed-non-runtime-findings")
+        )
+        self.assertIn("needs-human-review", disclosed)
+
     def test_fixed_runtime_confirmed_match_still_fails_the_case(self):
         # The hard-FP rule survives the alignment: a runtime-confirmed
         # finding on the fixed side demonstrates the defect is still

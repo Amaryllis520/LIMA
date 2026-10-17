@@ -927,10 +927,10 @@ def run_openharmony_case(
             diagnostics=(*fixed_record.diagnostics,
                          f"fixed-non-runtime-findings: "
                          f"{len(semantic_only)} "
-                         "matching positive finding(s) below "
-                         "runtime-confirmed on the fixed side "
-                         "(semantic-supported / fact-verified / "
-                         "tool-corroborated) -- known characteristic "
+                         "matching finding(s) below runtime-confirmed "
+                         "on the fixed side (semantic-supported / "
+                         "fact-verified / tool-corroborated / "
+                         "needs-human-review) -- known characteristic "
                          "per V03; the hard-FP rule and the 3+3 clean "
                          "replay still stand"),
         )

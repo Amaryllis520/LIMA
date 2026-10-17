@@ -1932,7 +1932,12 @@ class DiscoveryFallbackTests(unittest.TestCase):
         self.assertIn("fresh counter, exactly like the official "
                       "regression test", uaf)
         self.assertIn("verified discrimination", uaf)
-        self.assertIn("r17/r18 both failed the 3+3", uaf)
+        # Review P2: r18 failed at the fixed-side review (before the
+        # replay), not at the 3+3 -- the wording must match.
+        self.assertIn("r17 failed the 3+3 replay", uaf)
+        self.assertIn("r18 failed at the fixed-side review", uaf)
+        self.assertIn("before the replay even ran", uaf)
+        self.assertNotIn("r17/r18 both failed the 3+3", uaf)
         self.assertNotIn("a sweeping driver also crashes", uaf)
         # Battle r17: the 3+3 replay ran both sides and the pinned-
         # ordinal driver crashed the FIXED build too -- root cause was
