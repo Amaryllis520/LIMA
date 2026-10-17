@@ -1267,6 +1267,13 @@ def _report_markdown(
                 # verdict is failed or inconclusive (r15: the broad-
                 # sweep PoC also crashed the fixed build and the case
                 # correctly failed).
+                # Informational diagnostics that share a failure prefix
+                # but never cause the failure themselves; picking one as
+                # the "direct cause" would mask the real reason (review
+                # P2: fixed-non-runtime-findings + fixed-replay-hit).
+                _INFORMATIONAL_DIAGNOSTIC_PREFIXES: Final = (
+                    "fixed-non-runtime-findings",
+                )
                 reason = next(
                     (
                         code for code in result.reason_codes
@@ -1274,6 +1281,9 @@ def _report_markdown(
                             "fixed-", "vulnerable-", "required-",
                             "replay-", "provider-",
                         ))
+                        and not code.startswith(
+                            _INFORMATIONAL_DIAGNOSTIC_PREFIXES
+                        )
                     ),
                     next(
                         (

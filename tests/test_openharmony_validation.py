@@ -1475,6 +1475,47 @@ class BundleWriterTests(unittest.TestCase):
         )
         self.assertNotIn("直接原因：multiple-matching", paired)
 
+    def test_replay_hit_is_the_named_cause_not_the_informational_note(self):
+        # Review P2 round 3: when the fixed side has BOTH non-runtime
+        # findings (the informational fixed-non-runtime-findings
+        # diagnostic) AND the 3+3 replay actually fails
+        # (fixed-replay-hit), the gate's direct cause must name the
+        # replay failure -- the informational note shares the "fixed-"
+        # prefix and must not mask the real reason.
+        from dataclasses import replace
+
+        outcome = self.result.vulnerable.platform_outcome
+        first = outcome.findings[0]
+        second = replace(first, target_id="second-target", line=first.line + 1)
+        semantic = _finding(state="semantic-supported")
+        result = replace(
+            self.result,
+            vulnerable=replace(self.result.vulnerable,
+                               platform_outcome=replace(outcome, findings=(first, second))),
+            fixed=replace(self.result.fixed,
+                          platform_outcome=replace(
+                              self.result.fixed.platform_outcome,
+                              findings=(semantic,))),
+            status=self.module.ValidationStatus.FAILED,
+            reason_codes=(
+                "multiple-matching-findings: 2 runtime-confirmed "
+                "matches; the 3+3 replay uses the first",
+                "fixed-non-runtime-findings: 1 matching finding(s) "
+                "below runtime-confirmed on the fixed side "
+                "(semantic-supported / fact-verified / "
+                "tool-corroborated / needs-human-review) -- known "
+                "characteristic per V03; the hard-FP rule and the "
+                "3+3 clean replay still stand",
+                "fixed-replay-hit",
+            ),
+        )
+        paired = self.module._report_markdown(
+            result, "a" * 64,
+        ).split("# 漏洞研究报告")[1:][0]
+        self.assertIn("案例判定：failed", paired)
+        self.assertIn("直接原因：fixed-replay-hit", paired)
+        self.assertNotIn("直接原因：fixed-non-runtime-findings", paired)
+
     def test_report_does_not_pass_clean_replay_with_inconclusive_status(self):
         from dataclasses import replace
 

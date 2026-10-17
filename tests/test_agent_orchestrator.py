@@ -1922,9 +1922,10 @@ class DiscoveryFallbackTests(unittest.TestCase):
         # composition probe verified it discriminates: vulnerable
         # crashes, fixed clean).  The r15 erratum (ledger): the fixed
         # side never crashed in r15 -- the case failed on semantic
-        # hypotheses misjudged by the old contract; r17/r18 failed on
-        # driver-invalid usage in the 3+3.  The pin rule is grounded
-        # in the probe's verified discrimination, not in r15.
+        # hypotheses misjudged by the old contract.  r17 failed the
+        # 3+3 replay on driver-invalid usage; r18 failed at the
+        # fixed-side review before the replay ran.  The pin rule is
+        # grounded in the probe's verified discrimination.
         self.assertIn("Discriminating-PoC rule", uaf)
         self.assertIn("EXPLORATION only", uaf)
         self.assertIn("FOURTH", uaf)
