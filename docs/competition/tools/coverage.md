@@ -344,11 +344,45 @@ Dockerfile 未复制新增脚本的打包范围。2026-10-18 北京时间 18:12 
 
 ## 本次文件范围
 
-仅新增以下四个文件，无需改依赖、writer、检测器、gap taxonomy 或历史 bundle：
+E04 功能新增以下四个文件，无需改依赖、writer、检测器、gap taxonomy 或历史 bundle：
 
 - `scripts/summarize_competition_coverage.py`
 - `lima/competition_coverage.py`
 - `tests/test_competition_coverage.py`
 - `docs/competition/tools/coverage.md`
+
+### 用户授权的 CI 镜像源修复
+
+PR #316 的 `container-read-only` 在拉取 ECR Python 基镜像时遇到
+`429 Too Many Requests / Data limit exceeded`，尚未进入容器测试。
+用户随后明确授权考虑更换镜像源，因此本次在原四个新文件之外，仅额外修改主
+`Dockerfile` 两个 ARG 的默认拉取地址：
+
+- `public.ecr.aws/docker/library/python` → `docker.io/library/python`
+- `public.ecr.aws/docker/library/node` → `docker.io/library/node`
+
+Python 的 `9c900dea…d5bfc7` 和 Node 的 `c610fcdf…3aa32` 完整固定 digest 保持原值。
+实测读取 Docker Hub 官方仓库的原始 OCI manifest，计算 SHA-256 与各固定 digest
+相同；没有升级基础镜像。Sidecar、数据库、Redis 的来源与其合同不变。
+原 `PYTHON_BASE_IMAGE` / `NODE_BASE_IMAGE` build arg 覆盖方式继续可用。
+
+换源后实际执行主 Dockerfile 的 `docker build --pull --target test` 构建成功，再以
+非 root、只读根文件系统、断网容器执行默认全量 unittest：
+
+```text
+Ran 3221 tests in 64.130s
+
+OK (skipped=80)
+```
+
+即执行 3141 项、按既有条件跳过 80 项，零失败/错误；跳过原因包括镜像未装 Git、
+Clang/CMake/Semgrep、宿主 Landlock ABI 不足和平台限定。没有为了通过而修改测试
+或跳过条件。容器退出 0，OOMKilled=false。
+构建日志、完整测试日志、manifest 和校验记录保存在本机忽略目录
+`output/competition-coverage-293/registry-switch/run-20261018T103327820981Z/`。
+
+Docker Hub 官方源也有拉取限额；这次变更绕开已确认的 ECR 限流，不承诺任何镜像仓库
+永久无限制。说明见 [Docker Official Images](https://docs.docker.com/docker-hub/image-library/trusted-content/)
+和 [Docker Hub 拉取限额](https://docs.docker.com/docker-hub/usage/pulls/)。
 
 参考：[Issue #293](https://github.com/agent-sec-labs/LIMA/issues/293)。
