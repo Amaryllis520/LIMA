@@ -256,6 +256,7 @@ Task 7 之后平台经四轮实战加固（行定位×2、字段上限契约、�
 | r20 | rounds=3，同工作树 | inconclusive | vuln 侧拿到正式判定 **failed（vulnerable-no-matching-finding）**：13 线索/6 窗，仅 2 个 semantic-supported、无 runtime（模型方差，同 r7/r8 形态）；fixed 侧一个发现窗被上游 502→504 杀掉 → `required-review-unreviewed-units: expat/lib/xmlparse.c` → 整局 inconclusive |
 | r21 | rounds=3，同工作树 | inconclusive（**vuln 侧首个侧级 PASSED**） | 1473 s；**vulnerable: passed**（294 s / 25 调用，历史最效率轮）：2 个 runtime-confirmed 含 **4603 CVE-2022-43680 本体位**，`multiple-matching-findings: 2 matches; replay uses the first` 披露生效，3+3 回放通过——**配方 v5+v6 在 vuln 侧通过公平测试**；fixed 1179 s / 74 调用后被上游 502 杀在评审段（fixed-review-failed）。案例级 PASSED 只差 fixed 侧 3+3 干净对照 |
 | r22 | rounds=3，同工作树 | inconclusive | vuln 370 s / 25 调用即被上游 502 杀在评审段；fixed-not-run。当晚（2026-10-17 晚）上游四杀（r19/r20-fixed/r21-fixed/r22-vuln，全部 502/504 瞬断、合同如实记录非代码问题）；按纪律停手，次晨恢复（上午时段上游历史性稳定）。bundle：容器 `/app/output/openharmony/pilot-r{19..22}` |
+| r23 | rounds=3，main `bc9d20f`（**最终轮，按纪律停手**） | inconclusive（required-review 未满足） | 822 s；vulm **2/2 runtime-confirmed**（配方管线持续产出）但一个发现窗被上游 502 击中致线索掉落 → `required-review-unreviewed-units` → fixed-not-run。**V02 案例级战役正式收官**：r5–r23 共 19 轮，最佳 r21（vuln 首个侧级 PASSED，294 s / 25 调用，含 CVE 本体位 + 3+3 通过，仅 fixed 侧被瞬断击中）。案例级 PASSED 未达成的主因 = 上游网关瞬断（19 轮中 7 轮被 502/504 击中关键路径）。自动 runtime-confirmed 自 r13 起连续 6 轮稳定多命中，r17 峰值 7/7。**口径不变：已知案例调优后的自动复现**。 |
 
 **结论（诚实定级）**：runtime-confirmed 自动命中保持开放，但瓶颈已收窄定位——
 **检测层瞄死靶心**（正确函数+正确 CWE，四轮一致），**实验层驱动转换是唯一
