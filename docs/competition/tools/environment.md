@@ -35,6 +35,11 @@ settings、服务或第三方初始化，也不修改依赖、Dockerfile 或部�
 
 `--repository` 必须是选定工作树的根目录。Git 可用时核对 `--show-toplevel`，
 避免把普通子目录误认成其父仓库。支持普通工作树及 Git worktree；不采集远端 URL。
+Git 子进程只继承固定的 PATH、SystemRoot、TEMP、TMP、HOME、USERPROFILE 启动项，
+不枚举父进程环境；不继承任何 `GIT_*` 覆盖项。父进程的 `GIT_DIR`、
+`GIT_WORK_TREE`、`GIT_COMMON_DIR`、`GIT_INDEX_FILE`、对象目录或配置覆盖项不能
+重定向源码身份。Git 仍自行发现所选工作树的元数据，并使用正常 Git 配置与忽略规则，
+保留 Windows 换行处理；不强行假定 `.git` 是目录，因此支持 linked worktree。
 输出父目录必须已存在、文件必须不存在，且必须位于选定仓库外部，避免导出操作
 污染正在采集的 dirty 状态。即使文件在采集期间被别人创建，也不会覆盖。
 不创建目录，不向已有 bundle 写入，不修改输入。
@@ -44,6 +49,9 @@ run/model/container 标签均为 1–128 字符的 ASCII 标识：首字符字�
 代理参数及明显凭证标记。不要把任何凭证当标签；任意不透明字符串是否为凭证无法
 自动证明。镜像引用采用独立的 registry/repository:tag@sha256 语法校验，拒绝 URL
 userinfo、参数、控制字符和明显凭证标记；异常内容不会原文写回。
+仓库路径组件支持单点、单/双下划线及连续连字符（如 `lima__sidecar`、
+`lima--sidecar`），与 [distribution/reference 的 separator 规则](https://github.com/distribution/reference/blob/main/regexp.go)
+一致；三个下划线、连续点、首尾分隔符和大写仓库路径仍被拒绝。
 
 成功时 stdout/stderr 为空；读取新 JSON 即可查看清单。失败诊断只包含固定原因码。
 `--help` 展示用法并返回 0。不接受任意工具命令、环境变量清单或预算参数。
@@ -145,10 +153,10 @@ Docker inspect 的失败与隐私场景使用 Mock，无需挂载 Docker socket�
 - 首版实现后 21 项通过。Windows 补测修正一处 CRLF 测试断言，并增加真实 Git、
   非零退出、资源类型、输出竞争测试；并非宣称初始测试文件字节永久不变。
 - 实际 CLI 揭示父仓库向上发现问题，先补 3 项失败测试，再增加根身份核验和
-  缺失宿主字段的 unknown 原因。最终专项共 28 项。
-- Docker/Linux Python 3.11.16 和 Windows 本机 Python 3.9.13 均通过全部 28 项。
+  缺失宿主字段的 unknown 原因。当时专项共 28 项（历史记录，非当前总数）。
+- 首版 Docker/Linux Python 3.11.16 和 Windows 本机 Python 3.9.13 均通过 28 项。
   本机 3.9 只是额外兼容性观察，项目支持基线仍是 3.11+。
-- Docker 相关回归共 77 项：75 通过，2 项既有 Windows Job Object 测试在 Linux
+- 首版 Docker 相关回归共 77 项：75 通过，2 项既有 Windows Job Object 测试在 Linux
   跳过；无失败。包括本工具、competition performance、competition coverage、CI 合同。
 - 实际入口 CLI 在 Docker 和 Windows 各完成 16 个合成场景，退出码符合预期；
   每次输入仓库文件哈希不变，JSON/stdout/stderr 未含所埋隐私哨兵或绝对输入路径。
@@ -160,8 +168,9 @@ Docker inspect 的失败与隐私场景使用 Mock，无需挂载 Docker socket�
 - Bandit 的命令执行专项检查报告 1 项 LOW/HIGH-confidence B603：通用 Popen
   包装器。已逐一核对调用点：固定 argv 工具名/参数，只有受限容器标识可来自 CLI，
   `shell=False`；未通过忽略规则隐去该提示。
-- 未执行全项目测试、真实模型、真实漏洞 PoC、真实 OH 扫描、服务部署或健康检查。
-  没有安装新依赖或修改共享文件。独立人工审阅和合并后 CI 尚未执行。
+- 首版阶段未执行全项目测试；后续完整测试和人工审阅修复结果见下文。
+  始终未调用真实模型、执行真实漏洞 PoC/OH 扫描、服务部署或健康检查，
+  没有安装新依赖或修改共享文件。合并后 CI 尚未执行。
 
 相关回归命令：
 
@@ -201,11 +210,40 @@ python -m unittest tests.test_competition_environment tests.test_competition_per
 两个故障都先在本地重现失败再修复；仍仅修改本 issue 的四个白名单文件。
 镜像源不变，未修改 Dockerfile、CI 或依赖。
 
-修复后的本地验证：
+该次 CI 兼容性修复的历史验证（后续审阅增加测试，当前总数见下一节）：
 
 - Windows：30 项专项全部通过，包含规范路径权限错误回归。
 - Docker 源码布局：30 项专项全部通过；无独立脚本的打包布局也全部通过，零跳过。
 - Docker 完整源码及 Git 元数据快照：`python -m unittest discover -s tests -v`，
   3251 项，3229 通过、22 项环境条件跳过，零失败（67.755 秒）。使用容器 init
   回收子进程，工作树放在 `/work`，与系统临时目录分开；无网络、新依赖或扫描目标。
-- 远端新版 CI 的最终状态以 PR Checks 为准。
+- 提交 `0611342` 的远端 [CI run 39214936093](https://github.com/agent-sec-labs/LIMA/actions/runs/39214936093)
+  共 12 个 job 全部成功，包含 Windows/Linux Python 3.11/3.12 和 merge-gate。
+
+## PR #318 审阅修复与当前测试计数
+
+针对两项 P2 先补失败测试，重现跨仓库 HEAD 冒认、替代索引污染 dirty、合法镜像名
+被拒绝，再实现 Git 启动环境白名单和镜像路径分隔符修复。新增 6 项测试还覆盖
+linked worktree 的独立 HEAD/clean/dirty、环境不枚举，以及非法分隔符负对照。
+镜像引用继续拒绝 URL userinfo、查询参数、控制字符和凭证标记；合法引用的
+image ID、引用和资源限额均完整保留。Docker inspect 使用合成投影测试。
+
+当前专项为 36 项；相关四模块为 85 项。旧的 28/77 和 30/79 均属于之前版本，
+不能用作当前测试集合总数。unittest 的 `Ran` 含被跳过的用例；实际执行数等于
+`Ran - skipped`，下表明确区分口径。
+
+| 环境与范围 | 发现 / Ran（含跳过） | 实际执行 | 通过 | 跳过 | 失败 / 错误 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Windows Python 3.9.13 专项 | 36 | 36 | 36 | 0 | 0 |
+| Docker/Linux Python 3.11.16 专项（含于相关模块） | 36 | 36 | 36 | 0 | 0 |
+| Docker/Linux 无脚本打包布局专项 | 36 | 36 | 36 | 0 | 0 |
+| Docker/Linux 相关四模块 | 85 | 83 | 83 | 2 | 0 |
+| Docker/Linux 全量 unittest | 3257 | 3235 | 3235 | 22 | 0 |
+
+相关模块的 2 项跳过为仅支持 Windows 的 Job Object 测试；本轮未在 Windows 本机
+执行整个相关模块集合，因此不把 Linux 的 85 项结果算作 Windows 全部通过。
+本机 Python 3.9 只是补充观察；项目支持基线仍为 3.11+。
+全量测试耗时 68.309 秒，22 项均为既有环境条件跳过；相关 85 项耗时 2.121 秒，
+无脚本打包专项耗时 0.897 秒，Windows 专项耗时 10.799 秒。Docker 全量测试使用
+完整 Git 快照、非 root 用户、init、禁网、只读 root、临时 `/work` 和 `/tmp`，
+2 GiB 内存、2 CPU、PID 512；未更改镜像源或安装依赖。

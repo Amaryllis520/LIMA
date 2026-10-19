@@ -6,6 +6,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -366,6 +367,109 @@ class EnvironmentTests(unittest.TestCase):
         raw, reason = env._command([sys.executable, "-c",
                                    "print('" + SECRET + "'); raise SystemExit(4)"])
         self.assertEqual((raw, reason), (None, "nonzero_exit"))
+
+    def git_fixture(self, repository, *args):
+        return subprocess.run([
+            "git", "-c", "user.name=Synthetic", "-c", "user.email=synthetic@example.invalid",
+            "-c", "commit.gpgsign=false", "-c", "core.hooksPath=" + str(self.root / "no-hooks"),
+            "-c", "init.templateDir=", *args,
+        ], cwd=repository, check=True, capture_output=True, timeout=10)
+
+    def init_git_fixture(self, repository, content):
+        if shutil.which("git") is None:
+            self.skipTest("git not installed; missing-git behavior tested separately")
+        self.git_fixture(repository, "init", "-q")
+        (repository / "tracked.txt").write_text(content)
+        self.git_fixture(repository, "add", "tracked.txt")
+        self.git_fixture(repository, "commit", "-qm", content)
+        return self.git_fixture(repository, "rev-parse", "HEAD").stdout.decode().strip()
+
+    def test_inherited_git_directory_cannot_impersonate_selected_repository(self):
+        expected = self.init_git_fixture(self.repo, "repository A\n")
+        other = self.root / "other"
+        other.mkdir()
+        unexpected = self.init_git_fixture(other, "repository B\n")
+        self.assertNotEqual(expected, unexpected)
+        with patch.dict(os.environ, GIT_DIR=str(other / ".git"), GIT_WORK_TREE=str(self.repo)):
+            self.assertEqual(self.run_cli(command=env._command), 0)
+        self.assertEqual(self.document()["source"], {
+            "commit": expected, "dirty": False, "unknown_reasons": {}})
+        self.assertNotIn(str(other), self.output.read_text() + self.console)
+
+    def test_inherited_git_index_cannot_override_selected_repository_status(self):
+        expected = self.init_git_fixture(self.repo, "repository A\n")
+        alternate = self.root / "alternate-index"
+        with patch.dict(os.environ, GIT_INDEX_FILE=str(alternate)):
+            self.git_fixture(self.repo, "read-tree", "--empty")
+        index_before = (self.repo / ".git/index").read_bytes()
+        alternate_before = alternate.read_bytes()
+        with patch.dict(os.environ, GIT_INDEX_FILE=str(alternate)):
+            source = env._source(self.repo.resolve())
+        self.assertEqual(source, {"commit": expected, "dirty": False, "unknown_reasons": {}})
+        self.assertEqual(index_before, (self.repo / ".git/index").read_bytes())
+        self.assertEqual(alternate_before, alternate.read_bytes())
+
+    def test_linked_git_worktree_retains_its_own_head_and_status(self):
+        primary = self.init_git_fixture(self.repo, "primary worktree\n")
+        linked = self.root / "linked"
+        self.git_fixture(self.repo, "worktree", "add", "-qb", "synthetic-linked", str(linked))
+        self.git_fixture(linked, "commit", "--allow-empty", "-qm", "linked HEAD")
+        expected = self.git_fixture(linked, "rev-parse", "HEAD").stdout.decode().strip()
+        self.assertNotEqual(primary, expected)
+        self.assertTrue((linked / ".git").is_file())
+        self.assertEqual(env._source(linked.resolve()), {
+            "commit": expected, "dirty": False, "unknown_reasons": {}})
+        (linked / "untracked.txt").write_text(SECRET)
+        self.assertEqual(env._source(linked.resolve()), {
+            "commit": expected, "dirty": True, "unknown_reasons": {}})
+
+    def test_git_subprocess_environment_is_allowlisted_without_enumeration(self):
+        class LaunchEnvironment(dict):
+            def get(self, key, default=None):
+                if key not in ("PATH", "SystemRoot", "TEMP", "TMP", "HOME", "USERPROFILE"):
+                    raise AssertionError("unexpected environment lookup")
+                return super().get(key, default)
+
+            def __iter__(self):
+                raise AssertionError("environment enumeration")
+
+            def keys(self):
+                raise AssertionError("environment enumeration")
+
+        launch = LaunchEnvironment(PATH="synthetic-path", SystemRoot="synthetic-system",
+                                   GIT_DIR=SECRET, GIT_CONFIG_COUNT="1", PRIVATE_KEY=SECRET)
+        with patch.object(env.os, "environ", launch), \
+                patch.object(env.subprocess, "Popen", side_effect=FileNotFoundError) as popen:
+            self.assertEqual(env._command(["git", "--version"]), (None, "not_found"))
+        child = popen.call_args.kwargs.get("env")
+        self.assertIsNotNone(child)
+        self.assertEqual(child, {"PATH": "synthetic-path", "SystemRoot": "synthetic-system"})
+        self.assertNotIn(SECRET, repr(child))
+
+    def test_docker_repository_separator_grammar_preserves_container_projection(self):
+        for reference in ("registry.example/team/lima__sidecar:v1",
+                          "registry.example/team/lima--sidecar:v1",
+                          "lima__sidecar:v1", "team--name/lima---sidecar:v1",
+                          "registry.example:5000/team__name/lima---sidecar:v1@" + IMAGE):
+            with self.subTest(reference=reference):
+                self.output.unlink(missing_ok=True)
+                self.inspect["image_reference"] = reference
+                self.assertEqual(self.run_cli("--container", "one"), 0)
+                container = self.document()["container"]
+                self.assertIsNone(container["reason"])
+                self.assertEqual(container["image_reference"], reference)
+                self.assertEqual(container["image_id"], IMAGE)
+                self.assertEqual(container["limits"], self.inspect["limits"])
+                self.output.unlink()
+
+    def test_docker_invalid_repository_separators_remain_rejected(self):
+        for component in ("lima___sidecar", "lima..sidecar", "lima._sidecar",
+                          "_sidecar", "sidecar--", "Lima__sidecar"):
+            with self.subTest(component=component):
+                self.inspect["image_reference"] = "registry.example/team/" + component + ":v1"
+                self.assertEqual(self.run_cli("--container", "one"), 0)
+                self.assertEqual(self.document()["container"]["reason"], "invalid_projection")
+                self.output.unlink()
 
     def test_resource_types_and_digest_image_reference(self):
         for key, bad in (("pids_limit", True), ("nano_cpus", -1),

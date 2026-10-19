@@ -67,10 +67,23 @@ def _command(argv, *, cwd=None):
     reader also lets the caller return on timeout if a descendant holds the pipe.
     Nothing from a command's stderr or an exception is returned to the manifest.
     """
+    child_env = None
+    if argv[0] == "git":
+        # Build a minimal launch environment instead of enumerating the parent's.
+        # Inherited GIT_DIR/WORK_TREE/COMMON_DIR/INDEX_FILE/config/object overrides
+        # must not redirect identity away from the selected checkout. Let Git
+        # discover its own metadata, including a linked worktree's .git file.
+        child_env = {}
+        # Home locations preserve normal Git config (for example CRLF handling)
+        # without accepting GIT_CONFIG_* overrides from the parent process.
+        for key in ("PATH", "SystemRoot", "TEMP", "TMP", "HOME", "USERPROFILE"):
+            value = os.environ.get(key)
+            if value is not None:
+                child_env[key] = value
     try:
         process = subprocess.Popen(  # noqa: S603 -- callers use fixed command allowlist
             argv, cwd=cwd, shell=False, stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=child_env,
         )
     except FileNotFoundError:
         return None, "not_found"
@@ -208,9 +221,11 @@ def _image_reference(value):
     parts = value.split("@")
     if len(parts) > 2 or (len(parts) == 2 and not re.fullmatch(r"sha256:[0-9a-f]{64}", parts[1])):
         return False
+    # distribution/reference permits '.', '_', '__', or one or more '-' between
+    # alphanumeric runs. Preserve the separate credential and digest guards.
+    component = r"[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*"
     return re.fullmatch(
-        r"[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
-        r"(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
+        component + r"(?::[0-9]+)?(?:/" + component + r")*"
         r"(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?", parts[0], flags=re.ASCII,
     ) is not None
 
