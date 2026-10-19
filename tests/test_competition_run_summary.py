@@ -8,6 +8,7 @@ import csv
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -317,6 +318,100 @@ class RunSummaryTests(unittest.TestCase):
                                str(self.output)]), 0)
         self.assertEqual(before, tree_bytes(demo))
         self.assertEqual({r["validation_status"] for r in self.rows()}, {"failed", "passed"})
+
+    def test_numeric_equivalence_across_both_sides_and_nested_values(self):
+        for side in ("vulnerable", "fixed"):
+            self.summary[side].update(
+                file_coverage=1, byte_coverage=0, elapsed_seconds=12,
+                budget_usage={"calls": 1, "nested": [0.5, {"bytes": 2048}]})
+            platform = copy.deepcopy(self.summary[side])
+            platform.update(
+                file_coverage=1.0, byte_coverage=0.0, elapsed_seconds=12.0,
+                budget_usage={"nested": [0.5, {"bytes": 2048.0}], "calls": 1.0})
+            write_json(self.root / "one" / side / "platform.json", platform)
+        write_json(self.root / "one" / "summary.json", self.summary)
+        before = tree_bytes(self.root / "one")
+        self.assertEqual(self.run_tool(), 0)
+        row = self.rows()[0]
+        self.assertEqual(row["row_status"], "parsed")
+        self.assertEqual(row["validation_status"], "failed")
+        self.assertEqual(json.loads(row["vulnerable_findings_by_state"]),
+                         {"runtime-confirmed": 1, "semantic-supported": 2})
+        self.assertEqual(self.errors(), [])
+        self.assertEqual(before, tree_bytes(self.root / "one"))
+
+    def test_signed_zero_and_object_order_are_equivalent(self):
+        self.summary["vulnerable"]["budget_usage"] = {"zero": 0, "items": [1, 2.5]}
+        platform = copy.deepcopy(self.summary["vulnerable"])
+        platform["budget_usage"] = {"items": [1.0, 2.5], "zero": -0.0}
+        write_json(self.root / "one" / "summary.json", self.summary)
+        write_json(self.root / "one/vulnerable/platform.json", platform)
+        self.assertEqual(self.run_tool(), 0)
+        self.assertEqual(self.errors(), [])
+
+    def test_real_numeric_differences_remain_conflicts(self):
+        values = [(1, 0.5), ({"calls": [1]}, {"calls": [2.0]}),
+                  (2 ** 53 + 1, float(2 ** 53))]
+        for index, (left, right) in enumerate(values):
+            with self.subTest(left=left, right=right):
+                self.summary["vulnerable"]["budget_usage"] = left
+                platform = copy.deepcopy(self.summary["vulnerable"])
+                platform["budget_usage"] = right
+                write_json(self.root / "one/summary.json", self.summary)
+                write_json(self.root / "one/vulnerable/platform.json", platform)
+                out = self.root / f"numeric-conflict-{index}"
+                self.assertEqual(self.run_tool(output=out), 2)
+                error = json.loads((out / "errors.json").read_text())["errors"][0]
+                self.assertEqual(error["code"], "field_conflict")
+                self.assertEqual(error["field"], "vulnerable/budget_usage")
+
+    def test_booleans_and_numbers_remain_distinct_at_every_depth(self):
+        values = [(True, 1), (False, 0.0), (1.0, True),
+                  ({"calls": [True]}, {"calls": [1.0]}),
+                  ([{"complete": False}], [{"complete": 0}])]
+        for index, (left, right) in enumerate(values):
+            with self.subTest(left=left, right=right):
+                self.summary["vulnerable"]["budget_usage"] = left
+                platform = copy.deepcopy(self.summary["vulnerable"])
+                platform["budget_usage"] = right
+                write_json(self.root / "one/summary.json", self.summary)
+                write_json(self.root / "one/vulnerable/platform.json", platform)
+                out = self.root / f"boolean-conflict-{index}"
+                self.assertEqual(self.run_tool(output=out), 2)
+                errors = json.loads((out / "errors.json").read_text())["errors"]
+                self.assertEqual(errors[0]["code"], "field_conflict")
+
+    def test_list_order_and_object_fields_remain_conflicts(self):
+        values = [([1, 2], [2.0, 1.0]), ({"calls": 1}, {"calls": 1.0, "bytes": 0}),
+                  ({"calls": None}, {}), ({"calls": 1}, {"calls": "1"}),
+                  (None, 0), ([1], [1.0, 2])]
+        for index, (left, right) in enumerate(values):
+            with self.subTest(left=left, right=right):
+                self.summary["vulnerable"]["budget_usage"] = left
+                platform = copy.deepcopy(self.summary["vulnerable"])
+                platform["budget_usage"] = right
+                write_json(self.root / "one/summary.json", self.summary)
+                write_json(self.root / "one/vulnerable/platform.json", platform)
+                out = self.root / f"structure-conflict-{index}"
+                self.assertEqual(self.run_tool(output=out), 2)
+                errors = json.loads((out / "errors.json").read_text())["errors"]
+                self.assertEqual(errors[0]["code"], "field_conflict")
+
+    def test_module_gbk_diagnostic_retains_unicode_labels(self):
+        label = "round-\U0001f9ea"
+        entries = [dict(self.entries[0], run_label=label)] * 2
+        write_json(self.input, {"schema_version": 1, "runs": entries})
+        result = subprocess.run(
+            [sys.executable, "-m", "lima.competition_run_summary", "--inputs",
+             str(self.input), "--output-dir", str(self.output)],
+            env=dict(os.environ, PYTHONIOENCODING="gbk", PYTHONUTF8="0"),
+            capture_output=True, check=False)
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.stdout, b"")
+        diagnostic = json.loads(result.stderr.decode("gbk"))
+        self.assertEqual(diagnostic["code"], "duplicate_run_label")
+        self.assertEqual(diagnostic["ref"], "run:" + label)
+        self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":
