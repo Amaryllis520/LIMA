@@ -242,3 +242,43 @@ python -m tests.test_competition_report_materials --demo /evidence/docker-demo
 最终 AST、示例 JSON、空白/末尾换行和文档 JSON 对照实际 Docker 输出检查通过。
 结束时 tracked diff 仍为空，未跟踪交付恰为本 Issue 五个允许新增文件；
 未修改其他任务、共享文件或既有结果。
+
+## PR #320 的 CI 修复（2026-10-19）
+
+首轮 CI `39230023198` 的两个独立失败：
+
+1. `container-read-only` 构建成功，但测试镜像只复制模块、没有安装包或复制本工具
+   脚本。临时工作目录下的 `python -m lima.competition_report_materials` 因找不到
+   包而失败。此前源码挂载和 PYTHONPATH 掩盖了这项测试启动错误。
+2. `cxx-sidecar-integration` 尚未执行测试，ECR 获取已固定的基础镜像 manifest
+   返回 `429 Too Many Requests: Data limit exceeded`，导致 merge-gate 同时失败。
+
+先新增不含脚本、不继承 PYTHONPATH 的最小打包布局用例，实际复现同一错误。
+测试/合成 demo 的 fallback 改为通过固定 Python bootstrap 把已知包根目录加入
+子进程 sys.path，再用 runpy 启动模块；仍保留临时 cwd 和原有输出/退出码断言。
+不改产品 CLI、生产入口、主应用 Dockerfile、环境默认值或 CI。
+
+用户在本轮明确授权排查镜像问题和更改镜像源，因此另外修改
+`cxx_analyzer/Dockerfile` 和其既有 `tests/test_cxx_analyzer.py` 固定镜像合同。
+仅将 ECR 换成官方 Docker Hub `docker.io/library/python`，digest 仍为
+`sha256:b1add8a6f2aca6bcfcf0b9c9b522352f7ce0d62a3d556a2f2f32511aa0cca250`；
+实际 `docker pull` 成功，digest 完全一致。未升级基础镜像、改变 Clang/CMake/
+Semgrep 版本或弱化非 root、COPY 边界、只读及安全合同。
+本轮 PR 的最终范围为最初五个新增文件，加上述两个既有文件的来源/合同调整。
+
+从 Git tracked-source 快照叠加本轮改动构建真实 test 镜像，避免携带本地 worktree/
+输出。以下命令直接运行镜像自带测试，不挂载源码、不设置 PYTHONPATH：
+
+```text
+docker build --target test --tag lima:issue314-ci-fixed <tracked-source-context>
+docker run --rm --network none --read-only --tmpfs /tmp:rw,size=256m lima:issue314-ci-fixed
+Ran 3328 tests in 68.655s
+OK (skipped=87)
+```
+
+即实际执行并通过 3241 项；87 项为该镜像的平台/工具条件跳过，不算作通过。
+Windows 本轮材料检查专项与 Sidecar 安全合同合计 48 项，实际通过 41 项，
+跳过 7 项，耗时 3.951 s。以上均退出 0、零失败/错误。
+新增布局 RED 和两份构建/测试日志保留在本地忽略目录；远端完整 Sidecar 集成
+与合并门禁状态以本轮 PR 对应 GitHub Actions 检查为准，不用镜像拉取成功冒充
+Sidecar 测试通过。

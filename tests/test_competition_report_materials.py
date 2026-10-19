@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -29,6 +30,18 @@ FIELDS = (
 )
 SENTINEL = "SYNTHETIC_PRIVATE_CONTENT_314"
 REPOSITORY = Path(__file__).resolve().parents[1]
+
+
+def cli_command():
+    script = REPOSITORY / "scripts" / "check_competition_report_materials.py"
+    if script.exists():
+        return [sys.executable, str(script)]
+    # CI images copy modules without installing them or copying this script.
+    # Bootstrap the known package root explicitly, preserving the caller's cwd.
+    return [sys.executable, "-c",
+            "import runpy,sys; sys.path.insert(0,sys.argv.pop(1)); "
+            "runpy.run_module('lima.competition_report_materials',run_name='__main__')",
+            str(REPOSITORY)]
 
 
 def synthetic_case(directory):
@@ -450,17 +463,21 @@ class ReportMaterialsTests(unittest.TestCase):
 
     def test_cli_script_from_unrelated_working_directory(self):
         self.index_path.write_text(json.dumps(self.index), encoding="utf-8")
-        script = REPOSITORY / "scripts" / "check_competition_report_materials.py"
-        if script.exists():
-            command = [sys.executable, str(script)]
-        else:
-            # The production image may package modules without repository scripts.
-            command = [sys.executable, "-m", "lima.competition_report_materials"]
-        result = subprocess.run(command + ["--index", str(self.index_path), "--root", str(self.root),
+        result = subprocess.run(cli_command() + ["--index", str(self.index_path), "--root", str(self.root),
                                           "--output", str(self.output)], cwd=self.base,
                                 capture_output=True, text=True, timeout=10, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_boundaries()
+
+    def test_cli_packaged_layout_without_script_or_pythonpath(self):
+        package = self.base / "packaged"
+        (package / "lima").mkdir(parents=True)
+        for filename in ("__init__.py", "competition_report_materials.py"):
+            shutil.copyfile(Path(materials.__file__).parent / filename,
+                            package / "lima" / filename)
+        with patch(__name__ + ".REPOSITORY", package), patch.dict(os.environ):
+            os.environ.pop("PYTHONPATH", None)
+            self.test_cli_script_from_unrelated_working_directory()
 
 
 def demo(destination):
@@ -469,9 +486,7 @@ def demo(destination):
     root, document = synthetic_case(destination)
     index = destination / "index.json"
     index.write_text(json.dumps(document, indent=2), encoding="utf-8")
-    script = REPOSITORY / "scripts" / "check_competition_report_materials.py"
-    command = ([sys.executable, str(script)] if script.exists() else
-               [sys.executable, "-m", "lima.competition_report_materials"])
+    command = cli_command()
     codes = {}
     for label, expected in (("complete", 0), ("missing-poc", 2)):
         if label == "missing-poc":
