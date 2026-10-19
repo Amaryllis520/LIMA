@@ -351,3 +351,7 @@ def main(argv=None):
                 pass
         print("output_or_collection_error", file=sys.stderr)
         return 3
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

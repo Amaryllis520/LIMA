@@ -251,15 +251,24 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(self.run_cli(), 3)
         self.assertFalse(self.output.exists())
 
-    def test_output_permission_failure_sanitized(self):
+    def assert_output_permission_failure_sanitized(self):
+        target = self.output.resolve()
         original = Path.open
         def denied(path, *args, **kwargs):
-            if path == self.output:
+            if path.resolve() == target:
                 raise PermissionError(SECRET)
             return original(path, *args, **kwargs)
         with patch.object(Path, "open", denied):
             self.assertEqual(self.run_cli(), 3)
+        self.assertFalse(target.exists())
         self.assertNotIn(SECRET, self.console)
+
+    def test_output_permission_failure_sanitized(self):
+        self.assert_output_permission_failure_sanitized()
+
+    def test_output_permission_failure_with_noncanonical_path(self):
+        self.output = self.repo / ".." / "environment.json"
+        self.assert_output_permission_failure_sanitized()
 
     def test_no_environment_or_configuration_reads(self):
         (self.repo / ".env").write_text(SECRET)
@@ -300,7 +309,16 @@ class EnvironmentTests(unittest.TestCase):
 
     def test_actual_script_entrypoint(self):
         script = Path(__file__).resolve().parents[1] / "scripts/export_competition_environment.py"
-        result = subprocess.run([sys.executable, str(script), "--unknown=" + SECRET],
+        # The fixed Docker test image includes lima/, but not this optional script.
+        entry = [str(script)] if script.is_file() else ["-m", "lima.competition_environment"]
+        result = subprocess.run([sys.executable, *entry, "--unknown=" + SECRET],
+                                capture_output=True, timeout=10, check=False)
+        self.assertEqual(result.returncode, 3)
+        self.assertNotIn(SECRET.encode(), result.stdout + result.stderr)
+
+    def test_module_entrypoint_without_standalone_script(self):
+        result = subprocess.run([sys.executable, "-m", "lima.competition_environment",
+                                 "--unknown=" + SECRET],
                                 capture_output=True, timeout=10, check=False)
         self.assertEqual(result.returncode, 3)
         self.assertNotIn(SECRET.encode(), result.stdout + result.stderr)

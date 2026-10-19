@@ -186,3 +186,26 @@ python -m unittest tests.test_competition_environment tests.test_competition_per
 以上是实际输出的字段节选，不是完整清单。原始日志、CLI 生成的完整 JSON、
 合成验收驱动和逐场景结果留在本地忽略目录 `output/competition-environment-313/`，
 未纳入交付源码；日志中的本机路径不应发布。
+
+## PR #318 的 CI 兼容性修复
+
+首轮远端 CI 的镜像拉取、构建和 Sidecar 集成均成功。失败集中在两处测试适配：
+
+- Windows 的临时目录可能包含短路径别名；导出器解析为规范路径后，权限错误
+  Mock 使用未规范化路径比较，未能拦截输出。现在比较规范路径，并增加显式
+  `..` 路径的回归，断言错误码 3、无输出文件且异常哨兵不泄露。
+- 固定的 Docker test 镜像复制整个 `lima/`，但未打包此独立 CLI 脚本。新增同义
+  模块入口 `python -m lima.competition_environment`；源码检出测试真实脚本，
+  镜像测试模块入口，另有模块入口专项回归。参数和退出码合同相同，不增加跳过。
+
+两个故障都先在本地重现失败再修复；仍仅修改本 issue 的四个白名单文件。
+镜像源不变，未修改 Dockerfile、CI 或依赖。
+
+修复后的本地验证：
+
+- Windows：30 项专项全部通过，包含规范路径权限错误回归。
+- Docker 源码布局：30 项专项全部通过；无独立脚本的打包布局也全部通过，零跳过。
+- Docker 完整源码及 Git 元数据快照：`python -m unittest discover -s tests -v`，
+  3251 项，3229 通过、22 项环境条件跳过，零失败（67.755 秒）。使用容器 init
+  回收子进程，工作树放在 `/work`，与系统临时目录分开；无网络、新依赖或扫描目标。
+- 远端新版 CI 的最终状态以 PR Checks 为准。
