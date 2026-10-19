@@ -29,6 +29,13 @@ python -m lima.competition_report_materials --index materials.json --root approv
 
 `--output` 必须显式指定 root 外的新文件，父目录必须已存在；不创建父目录，
 不覆盖文件、链接或索引，不向材料目录/已有 sealed bundle 写入。
+Windows 输出在规范化前逐组件拒绝盘符之外的冒号/ADS、DOS 保留设备名
+（含扩展名、大小写变体和适用的 COM/LPT 上标数字）、CONIN$/CONOUT$、
+尾随点/空格及开头 ASCII 空格别名，包含稍后会被 `..` 折叠掉的组件。
+合法盘符保留；创建前复核同样规则，保留目录句柄与 O_EXCL，写入前还要求
+打开的描述符是普通文件。相关平台语义见
+[Windows 命名规则](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file)
+和 [NTFS 文件流](https://learn.microsoft.com/en-us/windows/win32/fileio/file-streams)。
 退出码：0=结构与必需引用齐备，2=缺件/无效输入，3=用法/输出错误。
 输入错误也生成结构化报告；输出错误只打印固定原因码，无原始异常或绝对路径。
 
@@ -282,3 +289,47 @@ Windows 本轮材料检查专项与 Sidecar 安全合同合计 48 项，实际�
 新增布局 RED 和两份构建/测试日志保留在本地忽略目录；远端完整 Sidecar 集成
 与合并门禁状态以本轮 PR 对应 GitHub Actions 检查为准，不用镜像拉取成功冒充
 Sidecar 测试通过。
+
+## 审阅 P2/P3 修复（2026-10-20）
+
+对应 [审阅意见](https://github.com/agent-sec-labs/LIMA/pull/320#issuecomment-6269252266)，
+不改字段完整性语义、CVE 状态或报告 writer。
+
+P2：此前 Windows 输出只检查文本路径和 O_EXCL，ADS 能向既有文件/输入索引
+增加数据流，设备名也可能不生成普通文件。先新增原生 Windows 回归，实际观察到
+`existing.txt` 和 `index.json` 均出现新数据流；设备测试拦截 O_CREAT，不实际写入
+控制台、打印机或串口。另复现规范化用 `..` 隐藏不安全组件的情形。
+
+现在在原始输出参数规范化前检查所有 Windows 组件；创建前复核、保留目录句柄/
+O_EXCL，并在写入前校验描述符为普通文件。测试通过 FindFirstStreamW/
+FindNextStreamW 枚举所有 NTFS 数据流，比较前后名称/大小、默认流字节和既有
+合成 ADS 哨兵内容；既有文件和输入索引均不新增或修改数据流，非法输出退出 3。
+成功用例必须生成仅有默认数据流的新普通 JSON 文件。
+
+P3：同步 README 的镜像来源说明，主应用及 Sidecar 都使用官方 Docker Hub；
+Compose PostgreSQL/Redis 仍用 ECR，digest 固定及主应用 build-arg 范围不变。
+审阅修正经本轮用户指示包含 README；最终 PR 为原七文件加 README，共八文件。
+
+原生 Windows Python 3.12.14 专项实际结果：
+
+```text
+python -m unittest tests.test_competition_report_materials -v
+Ran 48 tests in 3.955s
+OK (skipped=7)
+```
+
+实际通过 41 项，新增 5 项全部执行（四项原生 Windows 回归及一项跨平台语法测试）。
+7 项仍为六项无权限创建 symlink 及 POSIX FIFO；真实 junction 继续通过。
+不再用默认数据流的 SHA-256 不变代替 NTFS 数据流完整性检查。
+
+本轮真实 Docker test 镜像构建成功；不挂源码、不设置 PYTHONPATH 的只读全量结果：
+
+```text
+docker run --rm --network none --read-only --tmpfs /tmp:rw,size=256m lima:issue314-review
+Ran 3333 tests in 67.393s
+OK (skipped=91)
+```
+
+实际通过 3242 项，零失败/错误。较前次 87 项环境跳过新增四项 Windows 原生测试；
+跨平台 Windows 语法校验在 Linux 实际执行。未执行真实漏洞 PoC、OH 扫描或模型调用。
+AST 与 diff 空白检查通过；本轮仅修改实现、专项测试、本文和 README 四个文件。

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import ntpath
 import os
 import re
 import stat
@@ -55,6 +56,28 @@ def _absolute(path):
     if os.name == "nt" and value.startswith(("\\\\", "//")):
         raise CheckError("network_or_device_path")
     return Path(os.path.abspath(path))
+
+
+def _validate_windows_output_path(path):
+    """Reject device/stream aliases before Win32 normalization can hide them."""
+    drive, tail = ntpath.splitdrive(os.fspath(path))
+    if drive and re.fullmatch(r"[A-Za-z]:", drive) is None:
+        raise CheckError("invalid_output_path")
+    for component in re.split(r"[\\/]", tail):
+        if component in ("", ".", ".."):
+            continue
+        stem = component.split(".", 1)[0].strip(" ")
+        if (any(c in ':<>"|?*' or unicodedata.category(c) in ("Cc", "Cf", "Cs")
+                for c in component)
+                or component[-1] in " ." or component.startswith(" ")
+                or _DEVICE.fullmatch(stem) or stem.upper() in ("CONIN$", "CONOUT$")):
+            raise CheckError("invalid_output_path")
+
+
+def _output_absolute(path):
+    if os.name == "nt":
+        _validate_windows_output_path(path)
+    return _absolute(path)
 
 
 @contextmanager
@@ -364,6 +387,8 @@ def _validate(document, root, report, root_valid):
 
 
 def _validate_output(output, root, index):
+    if os.name == "nt":
+        _validate_windows_output_path(output)
     if output == index:
         raise CheckError("output_is_input")
     try:
@@ -379,6 +404,7 @@ def _validate_output(output, root, index):
 
 
 def _write_report(output, report):
+    output = _output_absolute(output)
     payload = (json.dumps(report, indent=2, ensure_ascii=True, allow_nan=False) + "\n").encode()
     with _directory_handle(output.parent) as parent:
         kwargs = {} if parent is None else {"dir_fd": parent}
@@ -387,8 +413,10 @@ def _write_report(output, report):
                              | getattr(os, "O_BINARY", 0), 0o600, **kwargs)
         try:
             with os.fdopen(descriptor, "wb") as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    raise CheckError("output_not_regular_file")
                 stream.write(payload)
-        except OSError:
+        except (CheckError, OSError):
             # Only a file created by this call is eligible for cleanup.
             try:
                 os.unlink(target, **kwargs)
@@ -404,7 +432,8 @@ def main(argv=None):
     parser.add_argument("--output", required=True)
     try:
         args = parser.parse_args(argv)
-        index, root, output = map(_absolute, (args.index, args.root, args.output))
+        index, root = map(_absolute, (args.index, args.root))
+        output = _output_absolute(args.output)
         _validate_output(output, root, index)
     except (CheckError, OSError, ValueError):
         print("report-materials-check: usage_or_output_error", file=sys.stderr)

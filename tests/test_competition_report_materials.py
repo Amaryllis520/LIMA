@@ -32,6 +32,42 @@ SENTINEL = "SYNTHETIC_PRIVATE_CONTENT_314"
 REPOSITORY = Path(__file__).resolve().parents[1]
 
 
+def windows_streams(path):
+    """Enumerate native NTFS data streams; default-stream hashes miss ADS writes."""
+    import ctypes
+    from ctypes import wintypes
+
+    class StreamData(ctypes.Structure):
+        _fields_ = [("size", ctypes.c_longlong), ("name", wintypes.WCHAR * 296)]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    first = kernel.FindFirstStreamW
+    first.argtypes = (wintypes.LPCWSTR, ctypes.c_int, ctypes.POINTER(StreamData), wintypes.DWORD)
+    first.restype = wintypes.HANDLE
+    following = kernel.FindNextStreamW
+    following.argtypes = (wintypes.HANDLE, ctypes.POINTER(StreamData))
+    following.restype = wintypes.BOOL
+    close = kernel.FindClose
+    close.argtypes = (wintypes.HANDLE,)
+    close.restype = wintypes.BOOL
+    data = StreamData()
+    handle = first(str(path), 0, ctypes.byref(data), 0)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    streams = {}
+    try:
+        while True:
+            streams[data.name] = data.size
+            if not following(handle, ctypes.byref(data)):
+                error = ctypes.get_last_error()
+                if error != 38:  # ERROR_HANDLE_EOF
+                    raise ctypes.WinError(error)
+                break
+    finally:
+        close(handle)
+    return streams
+
+
 def cli_command():
     script = REPOSITORY / "scripts" / "check_competition_report_materials.py"
     if script.exists():
@@ -419,6 +455,83 @@ class ReportMaterialsTests(unittest.TestCase):
         for destination in (self.base / "absent" / "out.json", self.base):
             self.output = destination
             self.assertEqual(self.run_check(), 3)
+
+    @unittest.skipUnless(os.name == "nt", "native Windows NTFS streams")
+    def test_windows_output_ads_does_not_modify_existing_host_or_index_streams(self):
+        self.index_path.write_text(json.dumps(self.index), encoding="utf-8")
+        host = self.base / "existing.txt"
+        host.write_text(SENTINEL, encoding="utf-8")
+        for target in (host, self.index_path):
+            with self.subTest(host=target.name):
+                baseline = Path(str(target) + ":existing-synthetic-stream")
+                baseline.write_bytes(b"existing stream sentinel")
+                before = windows_streams(target)
+                default_bytes = target.read_bytes()
+                self.assertIn(":existing-synthetic-stream:$DATA", before)
+                self.output = Path(str(target) + ":review-result.json")
+                code = self.run_check(argv=["--index", str(self.index_path), "--root",
+                                           str(self.root), "--output", str(self.output)])
+                # Check streams even when the exit-code assertion would fail.
+                self.assertEqual(windows_streams(target), before)
+                self.assertEqual(target.read_bytes(), default_bytes)
+                self.assertEqual(baseline.read_bytes(), b"existing stream sentinel")
+                self.assertEqual(code, 3)
+                self.assertNotIn(SENTINEL, self.console)
+                self.assertNotIn(str(self.base), self.console)
+
+    @unittest.skipUnless(os.name == "nt", "native Windows output namespace")
+    def test_windows_output_devices_and_aliases_rejected_before_creation(self):
+        names = ("CON", "AUX", "PRN", "NUL", "COM1", "LPT1", "con.txt", "aUx.JSON",
+                 "COM9.log", "LPT9.txt", "COM¹", "COM².txt", "LPT³.json", "COM0", "LPT0",
+                 "CONIN$", "CONOUT$", "CON .json", "report.json.", "report.json ")
+        for name in names:
+            with self.subTest(name=name):
+                self.output = self.base / name
+                # Never actually open console/printer devices while exercising the
+                # native main/preflight path; rejection must precede O_CREAT.
+                real_open = os.open
+
+                def deny_creation(path, flags, *args, **kwargs):
+                    if flags & os.O_CREAT:
+                        raise AssertionError("unsafe output reached creation")
+                    return real_open(path, flags, *args, **kwargs)
+
+                with patch.object(materials.os, "open", side_effect=deny_creation):
+                    self.assertEqual(self.run_check(), 3)
+        self.assertEqual(sorted(p.name for p in self.base.iterdir()), ["index.json", "materials"])
+
+    @unittest.skipUnless(os.name == "nt", "native Windows pre-normalization check")
+    def test_windows_output_rejects_unsafe_components_hidden_by_dotdot(self):
+        for component in ("CON", "directory.", "directory ", "host:stream"):
+            with self.subTest(component=component):
+                (self.base / "new.json").unlink(missing_ok=True)
+                self.output = self.base / component / ".." / "new.json"
+                self.assertEqual(self.run_check(), 3)
+                self.assertFalse((self.base / "new.json").exists())
+
+    @unittest.skipUnless(os.name == "nt", "native Windows regular output")
+    def test_windows_success_creates_new_regular_default_stream_file(self):
+        self.assertEqual(self.run_check(), 0)
+        self.assertTrue(self.output.is_file())
+        self.assertEqual(windows_streams(self.output), {"::$DATA": self.output.stat().st_size})
+        self.assertIs(self.report()["fields_complete"], True)
+        self.assert_boundaries()
+
+    def test_windows_output_path_grammar_without_filesystem_access(self):
+        for value in ("existing.txt:check.json", "index.json:review.json:$DATA",
+                      "CON", "con.txt", "CON .txt", "aux.JSON", "COM¹.log", "LPT³",
+                      "COM0", "LPT0", "CONIN$", "CONOUT$", "dir./new.json",
+                      "dir /new.json", " name.json", "name.json.", "name.json ",
+                      "CON/../new.json", "dir:stream/../new.json", "1:new.json",
+                      "C:/safe/COM9.json", "C:/safe/sub:stream/report.json",
+                      "//server/share/new.json", "\\\\?\\C:\\new.json"):
+            with self.subTest(path=value), self.assertRaises(materials.CheckError):
+                materials._validate_windows_output_path(value)
+        for value in ("new.json", "C:/reports/new.json", "C:new.json",
+                      "C:\\reports\\new.json", "./reports/../new.json", "COM10.json",
+                      "report.CON", "报告.json", "Program Files/new.json"):
+            with self.subTest(path=value):
+                materials._validate_windows_output_path(value)
 
     def test_symlink_output_parent_and_leaf_rejected(self):
         self.symlink(self.base / "alias", self.base, True)
