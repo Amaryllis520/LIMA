@@ -9,9 +9,9 @@ baseline and compatibility checks repeated. Independent branch:
 `codex/issue-312-run-summary`. Only this
 document, `tests/test_competition_run_summary.py`,
 `lima/competition_run_summary.py`, and `scripts/aggregate_competition_runs.py`
-are added. The user's explicit requests authorize the test-first implementation
-and subsequent PR publication. There is no remote assignment, reviewed Packet,
-independent agent verification, Issue claim, or merge in this delivery.
+are added. At initial delivery, there was no remote assignment, reviewed Packet,
+independent agent verification, Issue claim, or merge. The subsequent independent
+review and its open findings are recorded below.
 
 1. Freeze synthetic contract tests before implementing the loader or CLI.
 2. Prove RED in Docker with the implementation absent; record the test digest.
@@ -34,6 +34,9 @@ python scripts/aggregate_competition_runs.py --inputs runs.json --output-dir new
 
 `python -m lima.competition_run_summary` accepts the same arguments. Both entry
 points use the standard library only. The output directory must not exist.
+For the implementation reviewed at `a4140a9`, prefer the script entry point on
+Windows: it explicitly configures UTF-8 output, while the module entry point has
+the diagnostic-encoding limitation described under **Known issues from review**.
 
 ```json
 {
@@ -144,6 +147,31 @@ exclusively; existing result directories, even empty ones, are never overwritten
 Usage/output errors are controlled JSON diagnostics on stderr. Run errors are in
 `errors.json` as `{run_label, code, ref, field}`. An error-free run writes an empty
 `errors` array. Exit 0 means successful aggregation, not validation passed.
+
+## Known issues from review (implementation `a4140a9`)
+
+The following are reproduced implementation defects pending code and regression
+test fixes. This documentation update does not resolve them or change the
+intended output contract.
+
+- **P2 — equivalent numeric representations can produce a false conflict.**
+  `_agree` compares JSON-serialized text. A summary-side `file_coverage` of `1`
+  and corresponding platform value of `1.0` therefore produce `field_conflict`,
+  `row_status=error`, and exit 2, even though the numbers agree. Fields after the
+  conflict are not projected. The merged #316 coverage tool accepts the same
+  synthetic bundle. Keep sealed inputs unchanged and treat this as an aggregation
+  error pending a recursive value-comparison fix that distinguishes booleans from
+  numbers while allowing numerically equal integers and floats.
+- **P3 — the module entry point can emit invalid JSON diagnostics with GBK
+  stderr.** With `PYTHONIOENCODING=gbk` and duplicate run label `round-🧪`,
+  `python -m lima.competition_run_summary` exits 3 but stderr's encoding fallback
+  emits `\U0001f9ea`, which is not a valid JSON escape. A consumer parsing that
+  diagnostic fails. The script entry point configures UTF-8 and emits valid JSON.
+  Until the entry points are aligned, use the documented script command, or set
+  `$env:PYTHONIOENCODING = 'utf-8'` before invoking the module in PowerShell.
+
+These cases are absent from the initial 21-test contract suite. Passing that
+suite or CI does not demonstrate that either review finding is fixed.
 
 ## Repeatable synthetic demonstration
 
@@ -273,9 +301,30 @@ volume; verification runs as UID 10001, with that volume mounted read-only.
   counts. The final regression and 19-scenario acceptance were repeated after
   adding the Unicode rejection; both passed with the counts above unchanged.
 
+### Independent review (2026-10-19, Asia/Shanghai)
+
+Reviewed implementation: `a4140a9e4a8ddbcb7bd2ea4655776e1c584b57a6`.
+The [review comment](https://github.com/agent-sec-labs/LIMA/pull/317#issuecomment-6261370669)
+records the two open findings and their reproductions.
+
+- An independent Git archive snapshot passed
+  `python -m unittest tests.test_competition_run_summary tests.test_competition_coverage tests.test_openharmony_validation tests.test_competition_performance tests.test_ci_contract -v`:
+  134 tests in 111.375 seconds, zero failures/errors/skips on Windows.
+- The reviewed head's [CI run](https://github.com/agent-sec-labs/LIMA/actions/runs/39193357109)
+  had 12 successful jobs, including `merge-gate`. This is the status of the
+  reviewed implementation, not a claim about subsequent commits.
+- The script demos and a real `write_validation_bundle` synthetic fixture
+  roundtrip passed. The fixture retained its status and commits, model identity
+  stayed unknown, and input hashes were unchanged.
+- Reading the existing local expat pilot bundle preserved its `failed` status,
+  two vulnerable-side `semantic-supported` findings, and unknown model identity.
+  This checked historical input compatibility; no vulnerability was re-executed.
+- Both known issues above were reproduced separately from the passing suite.
+  The review recommendation is to fix P2 before merging; P3 also remains open.
+
 Logs, actual tables, exported two-bundle demo, and generated acceptance driver are
 under the ignored `output/competition-run-summary-312/` directory. Only the four
-Issue allowlist files are source changes. Real OpenHarmony scanning, real model
-identity, complete-bundle integrity, performance collection accuracy, full-project
-regression, remote CI, independent review, and merge are not verified
-by this synthetic offline tool delivery.
+Issue allowlist files are source changes. The independent review evidence is
+separate from those initial delivery records. Real OpenHarmony scanning, real
+model identity, complete-bundle integrity, performance collection accuracy,
+full-project regression, and merge remain outside the verified scope.
