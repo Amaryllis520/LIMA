@@ -426,7 +426,8 @@ class EnvironmentTests(unittest.TestCase):
     def test_git_subprocess_environment_is_allowlisted_without_enumeration(self):
         class LaunchEnvironment(dict):
             def get(self, key, default=None):
-                if key not in ("PATH", "SystemRoot", "TEMP", "TMP", "HOME", "USERPROFILE"):
+                if key not in ("PATH", "SystemRoot", "TEMP", "TMP", "HOME", "USERPROFILE",
+                               "XDG_CONFIG_HOME"):
                     raise AssertionError("unexpected environment lookup")
                 return super().get(key, default)
 
@@ -437,14 +438,47 @@ class EnvironmentTests(unittest.TestCase):
                 raise AssertionError("environment enumeration")
 
         launch = LaunchEnvironment(PATH="synthetic-path", SystemRoot="synthetic-system",
+                                   XDG_CONFIG_HOME="synthetic-config",
                                    GIT_DIR=SECRET, GIT_CONFIG_COUNT="1", PRIVATE_KEY=SECRET)
         with patch.object(env.os, "environ", launch), \
                 patch.object(env.subprocess, "Popen", side_effect=FileNotFoundError) as popen:
             self.assertEqual(env._command(["git", "--version"]), (None, "not_found"))
         child = popen.call_args.kwargs.get("env")
         self.assertIsNotNone(child)
-        self.assertEqual(child, {"PATH": "synthetic-path", "SystemRoot": "synthetic-system"})
+        self.assertEqual(child, {"PATH": "synthetic-path", "SystemRoot": "synthetic-system",
+                                 "XDG_CONFIG_HOME": "synthetic-config"})
         self.assertNotIn(SECRET, repr(child))
+
+    def test_xdg_git_config_ignore_rules_preserve_actual_dirty_status(self):
+        home = self.root / "synthetic-home"
+        config_home = self.root / "synthetic-xdg"
+        home.mkdir()
+        (config_home / "git").mkdir(parents=True)
+        config = config_home / "git/config"
+        ignore = config_home / "synthetic-ignore"
+        ignore.write_text("ignored.tmp\n")
+        with patch.dict(os.environ, HOME=str(home), USERPROFILE=str(home),
+                        XDG_CONFIG_HOME=str(config_home)):
+            expected = self.init_git_fixture(self.repo, "XDG fixture\n")
+            self.git_fixture(self.repo, "config", "--file", str(config),
+                             "core.excludesFile", ignore.as_posix())
+            ignored = self.repo / "ignored.tmp"
+            ignored.write_text(SECRET)
+            self.assertEqual(self.git_fixture(
+                self.repo, "status", "--porcelain=v1", "--untracked-files=all").stdout, b"")
+            watched = (config, ignore, ignored, self.repo / ".git/index")
+            before = [path.read_bytes() for path in watched]
+            self.assertEqual(self.run_cli(command=env._command), 0)
+            self.assertEqual(self.document()["source"], {
+                "commit": expected, "dirty": False, "unknown_reasons": {}})
+            self.assertEqual(before, [path.read_bytes() for path in watched])
+            (self.repo / "unignored.tmp").write_text(SECRET)
+            self.assertTrue(self.git_fixture(
+                self.repo, "status", "--porcelain=v1", "--untracked-files=all").stdout)
+            self.assertEqual(env._source(self.repo.resolve()), {
+                "commit": expected, "dirty": True, "unknown_reasons": {}})
+        for private in (SECRET, str(home), str(config_home), str(ignore)):
+            self.assertNotIn(private, self.output.read_text() + self.console)
 
     def test_docker_repository_separator_grammar_preserves_container_projection(self):
         for reference in ("registry.example/team/lima__sidecar:v1",

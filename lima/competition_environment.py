@@ -74,9 +74,10 @@ def _command(argv, *, cwd=None):
         # must not redirect identity away from the selected checkout. Let Git
         # discover its own metadata, including a linked worktree's .git file.
         child_env = {}
-        # Home locations preserve normal Git config (for example CRLF handling)
+        # User config locations preserve normal Git config and ignore rules
         # without accepting GIT_CONFIG_* overrides from the parent process.
-        for key in ("PATH", "SystemRoot", "TEMP", "TMP", "HOME", "USERPROFILE"):
+        for key in ("PATH", "SystemRoot", "TEMP", "TMP", "HOME", "USERPROFILE",
+                    "XDG_CONFIG_HOME"):
             value = os.environ.get(key)
             if value is not None:
                 child_env[key] = value

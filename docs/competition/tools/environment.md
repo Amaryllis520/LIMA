@@ -35,11 +35,14 @@ settings、服务或第三方初始化，也不修改依赖、Dockerfile 或部�
 
 `--repository` 必须是选定工作树的根目录。Git 可用时核对 `--show-toplevel`，
 避免把普通子目录误认成其父仓库。支持普通工作树及 Git worktree；不采集远端 URL。
-Git 子进程只继承固定的 PATH、SystemRoot、TEMP、TMP、HOME、USERPROFILE 启动项，
+Git 子进程只继承固定的 PATH、SystemRoot、TEMP、TMP、HOME、USERPROFILE、
+XDG_CONFIG_HOME 启动项，
 不枚举父进程环境；不继承任何 `GIT_*` 覆盖项。父进程的 `GIT_DIR`、
 `GIT_WORK_TREE`、`GIT_COMMON_DIR`、`GIT_INDEX_FILE`、对象目录或配置覆盖项不能
 重定向源码身份。Git 仍自行发现所选工作树的元数据，并使用正常 Git 配置与忽略规则，
 保留 Windows 换行处理；不强行假定 `.git` 是目录，因此支持 linked worktree。
+保留 `XDG_CONFIG_HOME` 使 Git 能使用标准的 `$XDG_CONFIG_HOME/git/config` 和其中的
+全局忽略规则；不读取、枚举或输出该配置路径及内容，Git 自身负责正常配置解析。
 输出父目录必须已存在、文件必须不存在，且必须位于选定仓库外部，避免导出操作
 污染正在采集的 dirty 状态。即使文件在采集期间被别人创建，也不会覆盖。
 不创建目录，不向已有 bundle 写入，不修改输入。
@@ -220,7 +223,7 @@ python -m unittest tests.test_competition_environment tests.test_competition_per
 - 提交 `0611342` 的远端 [CI run 39214936093](https://github.com/agent-sec-labs/LIMA/actions/runs/39214936093)
   共 12 个 job 全部成功，包含 Windows/Linux Python 3.11/3.12 和 merge-gate。
 
-## PR #318 审阅修复与当前测试计数
+## PR #318 第一轮审阅修复记录
 
 针对两项 P2 先补失败测试，重现跨仓库 HEAD 冒认、替代索引污染 dirty、合法镜像名
 被拒绝，再实现 Git 启动环境白名单和镜像路径分隔符修复。新增 6 项测试还覆盖
@@ -228,8 +231,8 @@ linked worktree 的独立 HEAD/clean/dirty、环境不枚举，以及非法分�
 镜像引用继续拒绝 URL userinfo、查询参数、控制字符和凭证标记；合法引用的
 image ID、引用和资源限额均完整保留。Docker inspect 使用合成投影测试。
 
-当前专项为 36 项；相关四模块为 85 项。旧的 28/77 和 30/79 均属于之前版本，
-不能用作当前测试集合总数。unittest 的 `Ran` 含被跳过的用例；实际执行数等于
+该轮专项为 36 项；相关四模块为 85 项，后续 XDG 修复又增加 1 项。
+以下为该轮历史验证，不能用作当前集合总数。unittest 的 `Ran` 含被跳过的用例；实际执行数等于
 `Ran - skipped`，下表明确区分口径。
 
 | 环境与范围 | 发现 / Ran（含跳过） | 实际执行 | 通过 | 跳过 | 失败 / 错误 |
@@ -247,3 +250,28 @@ image ID、引用和资源限额均完整保留。Docker inspect 使用合成投
 无脚本打包专项耗时 0.897 秒，Windows 专项耗时 10.799 秒。Docker 全量测试使用
 完整 Git 快照、非 root 用户、init、禁网、只读 root、临时 `/work` 和 `/tmp`，
 2 GiB 内存、2 CPU、PID 512；未更改镜像源或安装依赖。
+
+## PR #318 XDG 配置再审修复
+
+[再审意见](https://github.com/agent-sec-labs/LIMA/pull/318#issuecomment-6262747965)
+指出启动白名单遗漏 `XDG_CONFIG_HOME`，导致 Git 丢失标准用户配置和全局忽略规则，
+把正常 clean 仓库误报为 dirty。本轮先增加真实 Git 回归，并在 Docker 中证明
+原实现失败，再保留此具名配置项；仍不继承任何 `GIT_*` 覆盖项或枚举环境变量。
+
+测试只使用临时 HOME/USERPROFILE、XDG 配置和合成忽略文件：普通 Git status 与
+导出器对被忽略文件均报告 clean，新增未忽略文件后均报告 dirty；同时检查配置、
+忽略文件、合成文件及索引字节未改变，输出中没有配置路径或隐私哨兵。
+跨仓库身份、替代索引、linked worktree 和镜像引用的原回归继续执行。
+
+当前专项为 37 项，相关四模块为 86 项；以上 36/85 表格为上一轮历史记录。
+
+| 本轮环境与范围 | 发现 / Ran（含跳过） | 实际执行 | 通过 | 跳过 | 失败 / 错误 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Windows Python 3.9.13 专项 | 37 | 37 | 37 | 0 | 0 |
+| Docker/Linux Python 3.11.16 专项（含于相关模块） | 37 | 37 | 37 | 0 | 0 |
+| Docker/Linux 相关四模块 | 86 | 84 | 84 | 2 | 0 |
+| Docker/Linux 全量 unittest | 3258 | 3236 | 3236 | 22 | 0 |
+
+Windows 专项耗时 12.457 秒；Docker 相关模块耗时 2.259 秒，全量耗时 68.059 秒。
+Docker 沿用上一轮禁网、完整 Git 快照和一次性工作目录流程；2 项相关跳过与
+22 项全量跳过仍为既有平台/环境条件，不新增跳过，不拉取镜像或安装依赖。
