@@ -34,9 +34,10 @@ python scripts/aggregate_competition_runs.py --inputs runs.json --output-dir new
 
 `python -m lima.competition_run_summary` accepts the same arguments. Both entry
 points use the standard library only. The output directory must not exist.
-For the implementation reviewed at `a4140a9`, prefer the script entry point on
-Windows: it explicitly configures UTF-8 output, while the module entry point has
-the diagnostic-encoding limitation described under **Known issues from review**.
+Both entry points emit structured stderr diagnostics using ASCII JSON escapes,
+so labels containing non-ASCII characters remain parseable with GBK or UTF-8
+stderr. Output files are always UTF-8. See **Review corrections** for the original
+encoding defect and its regression coverage.
 
 ```json
 {
@@ -69,6 +70,10 @@ the original findings array. Null is a recorded value and conflicts with a
 different non-null value. Opposite sides never supply missing fields. Unknown
 finding states are retained under their original state names. Explicit empty
 findings produce `{}`, whereas absent findings produce null.
+Reconciliation compares values recursively: numerically equivalent integers and
+floats agree, including nested values and signed zero. Booleans remain distinct
+from numbers, list order and object keys must agree, and no float conversion is
+used to compare large integers. The original first source value is retained.
 
 Outputs are `summary.csv`, `summary.md`, and `errors.json`. Rows sort by the
 unescaped run label; the manifest order has no effect. Each specified run produces
@@ -148,30 +153,31 @@ Usage/output errors are controlled JSON diagnostics on stderr. Run errors are in
 `errors.json` as `{run_label, code, ref, field}`. An error-free run writes an empty
 `errors` array. Exit 0 means successful aggregation, not validation passed.
 
-## Known issues from review (implementation `a4140a9`)
+## Review corrections
 
-The following are reproduced implementation defects pending code and regression
-test fixes. This documentation update does not resolve them or change the
-intended output contract.
+The review of implementation `a4140a9` reproduced two defects, initially recorded
+by documentation-only commit `8b8b4d9`. The follow-up code fixes are:
 
-- **P2 — equivalent numeric representations can produce a false conflict.**
-  `_agree` compares JSON-serialized text. A summary-side `file_coverage` of `1`
-  and corresponding platform value of `1.0` therefore produce `field_conflict`,
-  `row_status=error`, and exit 2, even though the numbers agree. Fields after the
-  conflict are not projected. The merged #316 coverage tool accepts the same
-  synthetic bundle. Keep sealed inputs unchanged and treat this as an aggregation
-  error pending a recursive value-comparison fix that distinguishes booleans from
-  numbers while allowing numerically equal integers and floats.
-- **P3 — the module entry point can emit invalid JSON diagnostics with GBK
-  stderr.** With `PYTHONIOENCODING=gbk` and duplicate run label `round-🧪`,
-  `python -m lima.competition_run_summary` exits 3 but stderr's encoding fallback
-  emits `\U0001f9ea`, which is not a valid JSON escape. A consumer parsing that
-  diagnostic fails. The script entry point configures UTF-8 and emits valid JSON.
-  Until the entry points are aligned, use the documented script command, or set
-  `$env:PYTHONIOENCODING = 'utf-8'` before invoking the module in PowerShell.
+- **P2: equivalent numeric representations.** JSON text comparison incorrectly
+  rejected summary-side `file_coverage: 1` versus platform `1.0`. A recursive JSON
+  value comparison now accepts equivalent numbers on both sides and in nested
+  arrays/objects. Regression cases also require true numeric differences, boolean
+  versus numeric values, list reordering/length differences, missing/extra object
+  keys, null differences, and numeric strings to remain conflicts. A large integer
+  is not rounded to float before comparison. Inputs are not rewritten.
+- **P3: module diagnostics with GBK stderr.** Emoji duplicate labels previously
+  escaped through the text stream as invalid JSON `\U0001f9ea`. Both controlled
+  stderr error paths now use `ensure_ascii=True`, emitting standard JSON Unicode
+  escape sequences. The module subprocess regression explicitly sets
+  `PYTHONIOENCODING=gbk` and verifies that decoding and parsing recover the exact
+  label, while exit 3 and no-output behavior remain intact. The script uses the
+  same diagnostic implementation without changing the caller's stream settings.
 
-These cases are absent from the initial 21-test contract suite. Passing that
-suite or CI does not demonstrate that either review finding is fixed.
+Six new test methods supplement the original 21. They were committed first in
+`c308a36fc13d0029831bd7090602619042964341`; Docker reproduced two failures and one
+JSON parsing error on the old implementation before the fixes. All original
+test method bodies remain unchanged. These are implementation/regression fixes,
+not a new writer, schema, service, or shared utility dependency.
 
 ## Repeatable synthetic demonstration
 
@@ -319,8 +325,37 @@ records the two open findings and their reproductions.
 - Reading the existing local expat pilot bundle preserved its `failed` status,
   two vulnerable-side `semantic-supported` findings, and unknown model identity.
   This checked historical input compatibility; no vulnerability was re-executed.
-- Both known issues above were reproduced separately from the passing suite.
-  The review recommendation is to fix P2 before merging; P3 also remains open.
+- Both findings were reproduced separately from that passing suite. The review
+  recommended fixing P2 before merge; both P2 and P3 now have the code corrections
+  and new regression coverage described above. Independent re-review of those
+  corrections is not implied by the earlier review results.
+
+### Verification of review corrections (2026-10-19, Asia/Shanghai)
+
+- Docker RED with the old product code and 27 test methods: two numeric-equivalence
+  failures and the GBK diagnostic JSON parsing error reproduced. The original 21
+  methods remained unchanged; six new methods capture the review requirements.
+- After the fixes, the same five-module Docker regression found 140 tests:
+  138 passed, 2 Windows-only Job Object cases skipped, zero failures/errors
+  (7.533 seconds). All 27 run-summary tests passed without skips.
+- Twelve real subprocess invocations exercised both entry points under GBK and
+  UTF-8: numerically equivalent dual-side coverage remained parseable with the
+  original failed status, emoji duplicate-label diagnostics parsed with the exact
+  label, and output-write failures retained exit 3 and valid JSON. Input bundle
+  bytes were unchanged.
+- The existing 19-scenario / 37-call CLI acceptance passed again, including the
+  real writer roundtrip. All 194 regular synthetic input hashes were unchanged,
+  and the read-only input write probe was denied. These counts are separate from
+  unittest and the twelve encoding/entry-point checks.
+- Bandit and `git diff --check` passed. Product/test file hashes in the tested
+  image match the worktree. Test containers used the same restricted Docker
+  settings as the original validation, without network or new dependencies.
+- Before these corrections, the documentation-only head `8b8b4d9` had an
+  unrelated [C++ job failure](https://github.com/agent-sec-labs/LIMA/actions/runs/39211787487/job/117926583544):
+  ECR returned HTTP 429 while fetching the base-image manifest, before any C++
+  test executed. This PR does not change shared Docker/CI configuration to work
+  around that registry failure. Earlier successful CI records do not imply the
+  latest head has passed CI; subsequent run status must be checked separately.
 
 Logs, actual tables, exported two-bundle demo, and generated acceptance driver are
 under the ignored `output/competition-run-summary-312/` directory. Only the four

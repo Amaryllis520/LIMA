@@ -145,13 +145,30 @@ def _object(parent, key, ref):
     return value
 
 
+def _json_equal(left, right):
+    """Compare JSON values, retaining types except equivalent numeric spellings."""
+    if isinstance(left, bool) or isinstance(right, bool):
+        return type(left) is type(right) and left == right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(
+            _json_equal(value, right[key]) for key, value in left.items())
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _json_equal(a, b) for a, b in zip(left, right, strict=True))
+    return left == right
+
+
 def _agree(candidates, field):
     present = [(value, ref) for value, ref in candidates if value is not MISSING]
     if not present:
         return None, []
-    first = json.dumps(present[0][0], sort_keys=True, ensure_ascii=False)
+    first = present[0][0]
     for value, ref in present[1:]:
-        if json.dumps(value, sort_keys=True, ensure_ascii=False) != first:
+        if not _json_equal(value, first):
             raise InputError("field_conflict", ref, field)
     return present[0][0], [ref for _, ref in present]
 
@@ -373,7 +390,7 @@ def main(argv=None):
         entries = _manifest(path, output)
     except (InputError, OSError, RuntimeError, ValueError) as exc:
         error = exc if isinstance(exc, InputError) else InputError("invalid_path", "inputs")
-        print(json.dumps(error.record(None), ensure_ascii=False), file=sys.stderr)
+        print(json.dumps(error.record(None), ensure_ascii=True), file=sys.stderr)
         return 3
     rows, errors = [], []
     for label, root, performance, execution in entries:
@@ -396,7 +413,7 @@ def main(argv=None):
         _publish(output, rows, errors)
     except (InputError, OSError) as exc:
         error = exc if isinstance(exc, InputError) else InputError("output_write_failed", "output")
-        print(json.dumps(error.record(None), ensure_ascii=False), file=sys.stderr)
+        print(json.dumps(error.record(None), ensure_ascii=True), file=sys.stderr)
         return 3
     return 2 if errors else 0
 
